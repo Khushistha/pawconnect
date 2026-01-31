@@ -1,0 +1,210 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Merriweather:wght@400;700&display=swap');
+
+@layer base {
+  :root {
+    /* Paw Connect - Warm, Humane, Nature-Inspired Palette */
+    
+    /* Core backgrounds */
+    --background: 45 30% 98%;
+    --foreground: 150 25% 15%;
+    
+    /* Card surfaces */
+    --card: 45 40% 99%;
+    --card-foreground: 150 25% 15%;
+    
+    /* Popover */
+    --popover: 45 40% 99%;
+    --popover-foreground: 150 25% 15%;
+    
+    /* Primary - Forest Green (SDG 15 - Life on Land) */
+    --primary: 152 45% 35%;
+    --primary-foreground: 45 30% 98%;
+    --primary-light: 152 40% 45%;
+    --primary-dark: 152 50% 25%;
+    
+    /* Secondary - Warm Amber (Care & Warmth) */
+    --secondary: 35 85% 55%;
+    --secondary-foreground: 35 90% 15%;
+    --secondary-light: 35 80% 65%;
+    
+    /* Muted */
+    --muted: 45 20% 93%;
+    --muted-foreground: 150 10% 45%;
+    
+    /* Accent - Soft Teal */
+    --accent: 175 40% 45%;
+    --accent-foreground: 45 30% 98%;
+    
+    /* Destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    
+    /* Status Colors */
+    --status-reported: 35 85% 55%;
+    --status-progress: 200 80% 50%;
+    --status-treated: 152 45% 40%;
+    --status-adoptable: 280 60% 55%;
+    --status-adopted: 152 60% 35%;
+    
+    /* Borders & Inputs */
+    --border: 45 25% 88%;
+    --input: 45 25% 88%;
+    --ring: 152 45% 35%;
+    
+    --radius: 0.75rem;
+    
+    /* Sidebar */
+    --sidebar-background: 152 30% 18%;
+    --sidebar-foreground: 45 30% 95%;
+    --sidebar-primary: 35 85% 55%;
+    --sidebar-primary-foreground: 35 90% 15%;
+    --sidebar-accent: 152 25% 25%;
+    --sidebar-accent-foreground: 45 30% 95%;
+    --sidebar-border: 152 20% 25%;
+    --sidebar-ring: 35 85% 55%;
+    
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(152 45% 35%) 0%, hsl(175 40% 45%) 100%);
+    --gradient-warm: linear-gradient(135deg, hsl(35 85% 55%) 0%, hsl(25 90% 50%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(45 40% 99%) 0%, hsl(45 30% 96%) 100%);
+    --gradient-overlay: linear-gradient(180deg, transparent 0%, hsla(150 25% 15% / 0.7) 100%);
+    
+    /* Shadows */
+    --shadow-soft: 0 4px 20px -4px hsla(150 25% 15% / 0.1);
+    --shadow-card: 0 8px 30px -8px hsla(150 25% 15% / 0.12);
+    --shadow-elevated: 0 20px 50px -15px hsla(150 25% 15% / 0.15);
+  }
+
+  .dark {
+    --background: 150 20% 8%;
+    --foreground: 45 30% 95%;
+    
+    --card: 150 18% 12%;
+    --card-foreground: 45 30% 95%;
+    
+    --popover: 150 18% 12%;
+    --popover-foreground: 45 30% 95%;
+    
+    --primary: 152 50% 45%;
+    --primary-foreground: 150 20% 8%;
+    --primary-light: 152 45% 55%;
+    --primary-dark: 152 55% 35%;
+    
+    --secondary: 35 80% 50%;
+    --secondary-foreground: 35 90% 10%;
+    
+    --muted: 150 15% 18%;
+    --muted-foreground: 45 15% 60%;
+    
+    --accent: 175 45% 40%;
+    --accent-foreground: 45 30% 98%;
+    
+    --destructive: 0 65% 45%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 150 15% 20%;
+    --input: 150 15% 20%;
+    --ring: 152 50% 45%;
+    
+    --sidebar-background: 150 25% 6%;
+    --sidebar-foreground: 45 30% 95%;
+    --sidebar-primary: 35 80% 50%;
+    --sidebar-primary-foreground: 35 90% 10%;
+    --sidebar-accent: 150 20% 15%;
+    --sidebar-accent-foreground: 45 30% 95%;
+    --sidebar-border: 150 15% 15%;
+    --sidebar-ring: 35 80% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  
+  h1, h2, h3, h4 {
+    @apply font-display font-bold tracking-tight;
+  }
+}
+
+@layer components {
+  /* Hero Button Variants */
+  .btn-hero-primary {
+    @apply bg-gradient-to-r from-primary to-accent text-primary-foreground 
+           shadow-lg hover:shadow-xl transition-all duration-300 
+           hover:scale-[1.02] active:scale-[0.98];
+  }
+  
+  .btn-hero-secondary {
+    @apply bg-secondary text-secondary-foreground 
+           shadow-md hover:shadow-lg transition-all duration-300 
+           hover:scale-[1.02] active:scale-[0.98];
+  }
+  
+  /* Status Badges */
+  .badge-reported {
+    @apply bg-status-reported/15 text-status-reported border-status-reported/30;
+  }
+  
+  .badge-progress {
+    @apply bg-status-progress/15 text-status-progress border-status-progress/30;
+  }
+  
+  .badge-treated {
+    @apply bg-status-treated/15 text-status-treated border-status-treated/30;
+  }
+  
+  .badge-adoptable {
+    @apply bg-status-adoptable/15 text-status-adoptable border-status-adoptable/30;
+  }
+  
+  .badge-adopted {
+    @apply bg-status-adopted/15 text-status-adopted border-status-adopted/30;
+  }
+  
+  /* Card Hover Effects */
+  .card-interactive {
+    @apply transition-all duration-300 hover:shadow-card hover:-translate-y-1;
+  }
+  
+  /* Skeleton Shimmer */
+  .skeleton-shimmer {
+    @apply relative overflow-hidden;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted-foreground) / 0.1) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  
+  /* Glass Effect */
+  .glass {
+    @apply bg-card/80 backdrop-blur-lg border border-border/50;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+}
