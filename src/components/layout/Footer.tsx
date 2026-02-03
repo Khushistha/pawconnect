@@ -62,7 +62,7 @@ export function Footer() {
             <ul className="space-y-3 text-sm text-sidebar-foreground/70">
               <li className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-sidebar-primary" />
-                Kathmandu, Nepal
+                Nayabazar, Pokhara, Nepal
               </li>
               <li className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-sidebar-primary" />
