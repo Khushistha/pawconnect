@@ -21,13 +21,18 @@ import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
 
 // Dashboard Pages
+import SuperadminDashboard from "@/pages/dashboard/SuperadminDashboard";
 import NGODashboard from "@/pages/dashboard/NGODashboard";
 import VolunteerDashboard from "@/pages/dashboard/VolunteerDashboard";
 import VetDashboard from "@/pages/dashboard/VetDashboard";
 import AdopterDashboard from "@/pages/dashboard/AdopterDashboard";
+import VolunteersManagement from "@/pages/dashboard/VolunteersManagement";
+import VerificationManagement from "@/pages/dashboard/VerificationManagement";
+import RescueCasesManagement from "@/pages/dashboard/RescueCasesManagement";
 
 // Components
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { AuthRedirect } from "@/components/auth/AuthRedirect";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,7 +47,9 @@ const App = () => (
           <Routes>
             {/* Public Routes */}
             <Route element={<PublicLayout />}>
-              <Route path="/" element={<LandingPage />} />
+              <Route element={<AuthRedirect />}>
+                <Route path="/" element={<LandingPage />} />
+              </Route>
               <Route path="/adopt" element={<AdoptionGallery />} />
               <Route path="/dogs/:id" element={<DogProfilePage />} />
               <Route path="/report" element={<ReportDogPage />} />
@@ -53,18 +60,20 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
 
-            {/* NGO Admin Dashboard */}
+            {/* Superadmin & NGO Admin Dashboard */}
             <Route
               path="/dashboard"
               element={
-                <ProtectedRoute allowedRoles={['ngo_admin']}>
+                <ProtectedRoute allowedRoles={['superadmin', 'ngo_admin']}>
                   <DashboardLayout />
                 </ProtectedRoute>
               }
             >
-              <Route index element={<NGODashboard />} />
-              <Route path="rescues" element={<NGODashboard />} />
-              <Route path="dogs" element={<NGODashboard />} />
+              <Route index element={<SuperadminDashboard />} />
+              <Route path="volunteers" element={<VolunteersManagement />} />
+              <Route path="verifications" element={<VerificationManagement />} />
+              <Route path="rescues" element={<RescueCasesManagement />} />
+              <Route path="dogs" element={<RescueCasesManagement />} />
               <Route path="adoptions" element={<NGODashboard />} />
               <Route path="team" element={<NGODashboard />} />
             </Route>

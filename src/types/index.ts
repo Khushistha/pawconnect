@@ -1,5 +1,5 @@
 // User & Auth Types
-export type UserRole = 'public' | 'ngo_admin' | 'volunteer' | 'veterinarian' | 'adopter';
+export type UserRole = 'superadmin' | 'public' | 'ngo_admin' | 'volunteer' | 'veterinarian' | 'adopter';
 
 export interface User {
   id: string;

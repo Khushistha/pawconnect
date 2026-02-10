@@ -28,6 +28,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  // Superadmin
+  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard', roles: ['superadmin'] },
+  { icon: Users, label: 'Volunteers', href: '/dashboard/volunteers', roles: ['superadmin'] },
+  { icon: FileText, label: 'Verifications', href: '/dashboard/verifications', roles: ['superadmin'] },
+  
   // NGO Admin
   { icon: LayoutDashboard, label: 'Overview', href: '/dashboard', roles: ['ngo_admin'] },
   { icon: ClipboardList, label: 'Rescue Cases', href: '/dashboard/rescues', roles: ['ngo_admin'] },
@@ -62,6 +67,7 @@ export function DashboardLayout() {
   const filteredNavItems = navItems.filter(item => item.roles.includes(user.role));
 
   const roleTitle: Record<UserRole, string> = {
+    superadmin: 'Super Admin',
     ngo_admin: 'NGO Admin',
     volunteer: 'Volunteer',
     veterinarian: 'Veterinarian',

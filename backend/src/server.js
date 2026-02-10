@@ -9,6 +9,8 @@ import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
 import { dogsRouter } from './routes/dogs.js';
 import { reportsRouter } from './routes/reports.js';
+import { volunteersRouter } from './routes/volunteers.js';
+import { verificationsRouter } from './routes/verifications.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { pingDb } from './db/pool.js';
 import { migrate } from './db/migrate.js';
@@ -44,6 +46,8 @@ app.use('/api', healthRouter);
 app.use('/api', authRouter);
 app.use('/api', dogsRouter);
 app.use('/api', reportsRouter);
+app.use('/api', volunteersRouter);
+app.use('/api', verificationsRouter);
 
 app.use(errorHandler);
 

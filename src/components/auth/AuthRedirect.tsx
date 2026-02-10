@@ -1,13 +1,11 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import type { UserRole } from '@/types';
 
-interface ProtectedRouteProps {
-  children: React.ReactNode;
-  allowedRoles?: UserRole[];
-}
-
-export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
+/**
+ * Wrapper that redirects authenticated users to their dashboard.
+ * Unauthenticated users can access child routes (landing page, etc).
+ */
+export function AuthRedirect() {
   const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
@@ -18,20 +16,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    // Superadmin can access any protected route
-    if (user.role === 'superadmin') {
-      return <>{children}</>;
-    }
-
+  if (isAuthenticated && user) {
     // Redirect to appropriate dashboard based on role
     switch (user.role) {
       case 'superadmin':
-        return <Navigate to="/dashboard" replace />;
       case 'ngo_admin':
         return <Navigate to="/dashboard" replace />;
       case 'volunteer':
@@ -41,9 +29,11 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
       case 'adopter':
         return <Navigate to="/adopter" replace />;
       default:
-        return <Navigate to="/" replace />;
+        // Public users can see landing page
+        break;
     }
   }
 
-  return <>{children}</>;
+  // Unauthenticated or public users see child routes
+  return <Outlet />;
 }

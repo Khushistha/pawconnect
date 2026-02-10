@@ -5,12 +5,27 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   name VARCHAR(120) NOT NULL,
-  role ENUM('public','ngo_admin','volunteer','veterinarian','adopter') NOT NULL DEFAULT 'public',
+  role ENUM('superadmin','public','ngo_admin','volunteer','veterinarian','adopter') NOT NULL DEFAULT 'public',
   avatar VARCHAR(512) NULL,
   phone VARCHAR(40) NULL,
   organization VARCHAR(255) NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  verification_status ENUM('pending','approved','rejected') NULL,
+  verification_document_url VARCHAR(1024) NULL,
+  verified_at DATETIME NULL,
+  verified_by CHAR(36) NULL,
+  rejection_reason TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_verification_status (verification_status),
+  INDEX idx_role_verification (role, verification_status)
 );
+
+-- Ensure enum contains superadmin even if table already existed
+ALTER TABLE users
+  MODIFY COLUMN role ENUM('superadmin','public','ngo_admin','volunteer','veterinarian','adopter')
+  NOT NULL DEFAULT 'public';
+
+-- Add verification columns (MySQL doesn't support IF NOT EXISTS, so we'll handle errors gracefully)
+-- These will be added by migrate.js if they don't exist
 
 CREATE TABLE IF NOT EXISTS dogs (
   id CHAR(36) PRIMARY KEY,

@@ -1,9 +1,16 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { User, UserRole } from '@/types';
-import { mockUsers } from '@/data/mockData';
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api';
+
+interface AuthState {
+  user: User | null;
+  token: string | null;
+}
 
 interface AuthContextType {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
@@ -16,84 +23,108 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Check for stored user on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('pawconnect_user');
-    if (storedUser) {
+    const stored = localStorage.getItem('pawconnect_auth');
+    if (stored) {
       try {
-        setUser(JSON.parse(storedUser));
+        const parsed: AuthState = JSON.parse(stored);
+        setUser(parsed.user);
+        setToken(parsed.token);
       } catch (e) {
-        localStorage.removeItem('pawconnect_user');
+        localStorage.removeItem('pawconnect_auth');
       }
     }
     setIsLoading(false);
   }, []);
 
-  const login = useCallback(async (email: string, _password: string): Promise<boolean> => {
+  const persistAuth = (next: AuthState) => {
+    setUser(next.user);
+    setToken(next.token);
+    localStorage.setItem('pawconnect_auth', JSON.stringify(next));
+  };
+
+  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Find user by email (mock authentication)
-    const foundUser = mockUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-    
-    if (foundUser) {
-      setUser(foundUser);
-      localStorage.setItem('pawconnect_user', JSON.stringify(foundUser));
+
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        setIsLoading(false);
+        return false;
+      }
+
+      const data: { token: string; user: User } = await res.json();
+      persistAuth({ user: data.user, token: data.token });
       setIsLoading(false);
       return true;
+    } catch {
+      setIsLoading(false);
+      return false;
     }
-    
-    setIsLoading(false);
-    return false;
   }, []);
 
   const register = useCallback(async (
     email: string, 
-    _password: string, 
+    password: string, 
     name: string, 
     role: UserRole
   ): Promise<boolean> => {
     setIsLoading(true);
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Create new user
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      email,
-      name,
-      role,
-      createdAt: new Date().toISOString(),
-    };
-    
-    setUser(newUser);
-    localStorage.setItem('pawconnect_user', JSON.stringify(newUser));
-    setIsLoading(false);
-    return true;
+
+    try {
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password, name, role }),
+      });
+
+      if (!res.ok) {
+        setIsLoading(false);
+        return false;
+      }
+
+      const data: { token: string; user: User } = await res.json();
+      persistAuth({ user: data.user, token: data.token });
+      setIsLoading(false);
+      return true;
+    } catch {
+      setIsLoading(false);
+      return false;
+    }
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem('pawconnect_user');
+    setToken(null);
+    localStorage.removeItem('pawconnect_auth');
   }, []);
 
   const updateUser = useCallback((updates: Partial<User>) => {
     if (user) {
       const updatedUser = { ...user, ...updates };
       setUser(updatedUser);
-      localStorage.setItem('pawconnect_user', JSON.stringify(updatedUser));
+      localStorage.setItem('pawconnect_auth', JSON.stringify({ user: updatedUser, token }));
     }
-  }, [user]);
+  }, [user, token]);
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        token,
         isAuthenticated: !!user,
         isLoading,
         login,

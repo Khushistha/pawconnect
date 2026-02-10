@@ -31,18 +31,42 @@ export default function LoginPage() {
     const success = await login(data.email, data.password);
     
     if (success) {
-      navigate('/');
+      // Small delay to ensure user state is updated in localStorage
+      setTimeout(() => {
+        try {
+          const stored = localStorage.getItem('pawconnect_auth');
+          if (stored) {
+            const authData = JSON.parse(stored);
+            const currentUser = authData?.user;
+            
+            if (currentUser) {
+              switch (currentUser.role) {
+                case 'superadmin':
+                case 'ngo_admin':
+                  navigate('/dashboard', { replace: true });
+                  return;
+                case 'volunteer':
+                  navigate('/volunteer', { replace: true });
+                  return;
+                case 'veterinarian':
+                  navigate('/vet', { replace: true });
+                  return;
+                case 'adopter':
+                  navigate('/adopter', { replace: true });
+                  return;
+              }
+            }
+          }
+        } catch {
+          // If parsing fails, fallback to AuthRedirect
+        }
+        // Fallback: AuthRedirect will handle it
+        navigate('/', { replace: true });
+      }, 50);
     } else {
-      setError('Invalid email or password. Try: admin@pawconnect.org.np');
+      setError('Invalid email or password. Please check your credentials.');
     }
   };
-
-  const demoAccounts = [
-    { role: 'NGO Admin', email: 'admin@pawconnect.org.np' },
-    { role: 'Volunteer', email: 'volunteer@pawconnect.org.np' },
-    { role: 'Veterinarian', email: 'vet@pawconnect.org.np' },
-    { role: 'Adopter', email: 'adopter@gmail.com' },
-  ];
 
   return (
     <div className="min-h-screen flex">
@@ -123,24 +147,6 @@ export default function LoginPage() {
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
-
-          {/* Demo Accounts */}
-          <div className="space-y-3">
-            <p className="text-xs text-center text-muted-foreground">Demo accounts (any password)</p>
-            <div className="grid grid-cols-2 gap-2">
-              {demoAccounts.map((account) => (
-                <button
-                  key={account.email}
-                  type="button"
-                  onClick={() => login(account.email, 'demo').then(() => navigate('/'))}
-                  className="text-xs p-2 rounded-lg border hover:bg-muted transition-colors text-left"
-                >
-                  <span className="font-medium block">{account.role}</span>
-                  <span className="text-muted-foreground truncate block">{account.email}</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           <p className="text-center text-sm text-muted-foreground">
             Don't have an account?{' '}

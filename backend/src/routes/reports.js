@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { pool } from '../db/pool.js';
+import { requireAuth } from '../middleware/auth.js';
 import { HttpError } from '../utils/httpError.js';
 
 export const reportsRouter = Router();
@@ -84,11 +85,66 @@ reportsRouter.post('/reports', async (req, res, next) => {
   }
 });
 
+// GET /api/reports - List all reports (public or admin)
 reportsRouter.get('/reports', async (_req, res, next) => {
   try {
     const [reportRows] = await pool.query(
       `SELECT * FROM rescue_reports ORDER BY reported_at DESC LIMIT 200`
     );
+    const reportIds = reportRows.map((r) => r.id);
+
+    let photosByReport = new Map();
+    if (reportIds.length) {
+      const [photoRows] = await pool.query(
+        `SELECT report_id, url FROM rescue_report_photos
+         WHERE report_id IN (${reportIds.map(() => '?').join(',')})
+         ORDER BY sort_order ASC, id ASC`,
+        reportIds
+      );
+      photosByReport = photoRows.reduce((m, pr) => {
+        const arr = m.get(pr.report_id) ?? [];
+        arr.push(pr.url);
+        m.set(pr.report_id, arr);
+        return m;
+      }, new Map());
+    }
+
+    res.json({
+      items: reportRows.map((r) => mapReportRow(r, photosByReport.get(r.id) ?? [])),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/reports/my-tasks - Get reports assigned to logged-in volunteer
+reportsRouter.get('/reports/my-tasks', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.sub;
+    if (!userId) {
+      throw new HttpError(401, 'Unauthorized');
+    }
+
+    // Only volunteers can access their tasks
+    if (req.user?.role !== 'volunteer') {
+      throw new HttpError(403, 'Only volunteers can access their tasks');
+    }
+
+    const [reportRows] = await pool.query(
+      `SELECT * FROM rescue_reports 
+       WHERE assigned_to = ? 
+       ORDER BY 
+         CASE urgency 
+           WHEN 'critical' THEN 1 
+           WHEN 'high' THEN 2 
+           WHEN 'medium' THEN 3 
+           ELSE 4 
+         END,
+         reported_at DESC
+       LIMIT 100`,
+      [userId]
+    );
+    
     const reportIds = reportRows.map((r) => r.id);
 
     let photosByReport = new Map();

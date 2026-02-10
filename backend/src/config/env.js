@@ -30,6 +30,9 @@ const normalized = {
   MYSQL_USER: process.env.MYSQL_USER ?? process.env.DB_USER,
   MYSQL_PASSWORD: process.env.MYSQL_PASSWORD ?? process.env.DB_PASSWORD,
   MYSQL_DATABASE: process.env.MYSQL_DATABASE ?? process.env.DB_NAME,
+  EMAIL_USER: process.env.EMAIL_USER,
+  EMAIL_PASS: process.env.EMAIL_PASS,
+  EMAIL_FROM: process.env.EMAIL_FROM ?? process.env.EMAIL_USER,
 };
 
 const envSchema = z.object({
@@ -45,11 +48,25 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   JWT_EXPIRES_IN: z.string().optional().default('7d'),
 
+  SUPERADMIN_EMAIL: z.string().email().optional(),
+  SUPERADMIN_PASSWORD: z.string().min(8).optional(),
+  SUPERADMIN_NAME: z.string().min(2).optional().default('Super Admin'),
+
   MYSQL_HOST: z.string().min(1),
   MYSQL_PORT: z.coerce.number().int().positive().optional().default(3306),
   MYSQL_USER: z.string().min(1),
   MYSQL_PASSWORD: z.string().optional().default(''),
   MYSQL_DATABASE: z.string().min(1),
+
+  // Cloudinary (for image/document uploads)
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
+
+  // Email (for notifications and OTP)
+  EMAIL_USER: z.string().email().optional(),
+  EMAIL_PASS: z.string().optional(),
+  EMAIL_FROM: z.string().email().optional(),
 });
 
 export const env = envSchema.parse(normalized);
