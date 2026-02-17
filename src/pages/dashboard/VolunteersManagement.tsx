@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { Spinner, ButtonSpinner } from '@/components/ui/spinner';
 
 interface Volunteer {
   id: string;
@@ -309,7 +310,7 @@ export default function VolunteersManagement() {
       {/* Volunteers List */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <Spinner size="lg" />
         </div>
       ) : filteredVolunteers.length === 0 ? (
         <Card>
@@ -432,6 +433,7 @@ export default function VolunteersManagement() {
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
+                {submitting && <ButtonSpinner />}
                 {submitting ? 'Saving...' : editingVolunteer ? 'Update' : 'Create'}
               </Button>
             </DialogFooter>
@@ -455,6 +457,7 @@ export default function VolunteersManagement() {
               className="bg-destructive"
               disabled={deleting}
             >
+              {deleting && <ButtonSpinner />}
               {deleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -14,11 +14,14 @@ export default function VolunteerDashboard() {
   const { user, token } = useAuth();
   const { toast } = useToast();
   const [assignedTasks, setAssignedTasks] = useState<RescueReport[]>([]);
+  const [myReports, setMyReports] = useState<RescueReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingReports, setLoadingReports] = useState(true);
   
   useEffect(() => {
     if (token && user?.role === 'volunteer') {
       fetchMyTasks();
+      fetchMyReports();
     }
   }, [token, user]);
 
@@ -49,10 +52,43 @@ export default function VolunteerDashboard() {
       setLoading(false);
     }
   };
+
+  const fetchMyReports = async () => {
+    if (!token) return;
+
+    try {
+      setLoadingReports(true);
+      const response = await fetch(`${API_URL}/reports/my-reports`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch reports');
+      }
+
+      const data = await response.json();
+      setMyReports(data.items || []);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load your reports',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingReports(false);
+    }
+  };
   
   const pendingTasks = assignedTasks.filter(r => r.status === 'assigned');
   const inProgressTasks = assignedTasks.filter(r => r.status === 'in_progress');
   const completedToday = assignedTasks.filter(r => r.status === 'completed').slice(0, 2);
+  
+  // Reports I created
+  const myPendingReports = myReports.filter(r => r.status === 'pending');
+  const myInProgressReports = myReports.filter(r => r.status === 'in_progress');
+  const myCompletedReports = myReports.filter(r => r.status === 'completed');
 
   const mapMarkers = assignedTasks.map(task => ({
     id: task.id,
@@ -66,33 +102,36 @@ export default function VolunteerDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">My Rescue Tasks</h1>
+          <h1 className="text-2xl font-bold">My Dashboard</h1>
           <p className="text-muted-foreground">
-            You have {pendingTasks.length + inProgressTasks.length} active tasks
+            {pendingTasks.length + inProgressTasks.length} active tasks • {myReports.length} reports created
           </p>
         </div>
         <Button
           variant="outline"
-          onClick={fetchMyTasks}
-          disabled={loading}
-          title="Refresh tasks"
+          onClick={() => {
+            fetchMyTasks();
+            fetchMyReports();
+          }}
+          disabled={loading || loadingReports}
+          title="Refresh"
         >
-          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 mr-2 ${loading || loadingReports ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
 
       {/* Stats */}
-      {loading ? (
+      {loading || loadingReports ? (
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-4 text-center">
               <div className="text-2xl font-bold text-status-reported">{pendingTasks.length}</div>
-              <p className="text-xs text-muted-foreground">Pending</p>
+              <p className="text-xs text-muted-foreground">Assigned Tasks</p>
             </CardContent>
           </Card>
           <Card>
@@ -104,7 +143,25 @@ export default function VolunteerDashboard() {
           <Card>
             <CardContent className="p-4 text-center">
               <div className="text-2xl font-bold text-status-adopted">{completedToday.length}</div>
-              <p className="text-xs text-muted-foreground">Completed Today</p>
+              <p className="text-xs text-muted-foreground">Completed</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-bold text-status-reported">{myPendingReports.length}</div>
+              <p className="text-xs text-muted-foreground">My Reports (Pending)</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-bold text-status-progress">{myInProgressReports.length}</div>
+              <p className="text-xs text-muted-foreground">My Reports (Active)</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 text-center">
+              <div className="text-2xl font-bold text-status-adopted">{myCompletedReports.length}</div>
+              <p className="text-xs text-muted-foreground">My Reports (Done)</p>
             </CardContent>
           </Card>
         </div>
@@ -133,10 +190,52 @@ export default function VolunteerDashboard() {
         </Card>
       )}
 
+      {/* My Reports Section */}
+      {!loadingReports && myReports.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Reports I Created</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {myReports.slice(0, 5).map((report) => (
+              <div 
+                key={report.id} 
+                className={`p-4 rounded-xl border-2 ${
+                  report.urgency === 'critical' 
+                    ? 'border-destructive/50 bg-destructive/5' 
+                    : 'border-border'
+                }`}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={report.status} />
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      report.urgency === 'critical' ? 'bg-destructive/10 text-destructive' :
+                      report.urgency === 'high' ? 'bg-status-reported/10 text-status-reported' :
+                      'bg-muted text-muted-foreground'
+                    }`}>
+                      {report.urgency.toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(report.reportedAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="text-sm mb-3">{report.description}</p>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MapPin className="w-4 h-4" />
+                  {report.location.address}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Task List */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Active Tasks</CardTitle>
+          <CardTitle className="text-lg">Assigned Tasks</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (

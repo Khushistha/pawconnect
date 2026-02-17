@@ -107,3 +107,44 @@ CREATE TABLE IF NOT EXISTS password_reset_otps (
   INDEX idx_otp_used (used)
 );
 
+-- Adoption applications (submitted by logged-in users; reviewed by NGO admins)
+CREATE TABLE IF NOT EXISTS adoption_applications (
+  id CHAR(36) PRIMARY KEY,
+  dog_id CHAR(36) NOT NULL,
+  applicant_id CHAR(36) NOT NULL,
+  ngo_id CHAR(36) NULL,
+  applicant_phone VARCHAR(40) NOT NULL,
+  home_type VARCHAR(120) NOT NULL,
+  has_yard TINYINT(1) NOT NULL DEFAULT 0,
+  other_pets VARCHAR(255) NOT NULL DEFAULT '',
+  experience TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  status ENUM('pending','under_review','approved','rejected') NOT NULL DEFAULT 'pending',
+  notes TEXT NULL,
+  submitted_at DATETIME NOT NULL,
+  reviewed_at DATETIME NULL,
+  reviewed_by CHAR(36) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_adopt_app_dog FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_adopt_app_applicant FOREIGN KEY (applicant_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_adopt_app_dog (dog_id),
+  INDEX idx_adopt_app_applicant (applicant_id),
+  INDEX idx_adopt_app_ngo (ngo_id),
+  INDEX idx_adopt_app_status (status)
+);
+
+-- In-app notifications
+CREATE TABLE IF NOT EXISTS notifications (
+  id CHAR(36) PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  type ENUM('info','success','warning','error') NOT NULL DEFAULT 'info',
+  link VARCHAR(255) NULL,
+  is_read TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_notifications_user_read (user_id, is_read),
+  INDEX idx_notifications_created (created_at)
+);
+

@@ -67,7 +67,8 @@ export function DogCard({ dog, showAdoptButton = true }: DogCardProps) {
           </Button>
           {showAdoptButton && dog.status === 'adoptable' && (
             <Button asChild className="flex-1 btn-hero-primary">
-              <Link to={`/adopt/${dog.id}`}>Adopt Me</Link>
+              {/* Go to details and (if logged-in + phone exists) auto-submit pending request */}
+              <Link to={`/dogs/${dog.id}?apply=1&quick=1`}>Adopt Me</Link>
             </Button>
           )}
         </div>

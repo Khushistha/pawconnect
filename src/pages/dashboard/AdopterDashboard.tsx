@@ -1,19 +1,70 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, PawPrint, Clock, CheckCircle2, XCircle, Heart } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { mockAdoptionApplications, mockDogs } from '@/data/mockData';
+import { Spinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import type { AdoptionApplication, Dog } from '@/types';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function AdopterDashboard() {
-  const { user } = useAuth();
-  
-  // Get applications for this user
-  const myApplications = mockAdoptionApplications.filter(
-    app => app.applicantId === user?.id || app.applicantEmail === user?.email
-  );
+  const { user, token } = useAuth();
+  const { toast } = useToast();
+  const [apps, setApps] = useState<AdoptionApplication[]>([]);
+  const [dogsById, setDogsById] = useState<Record<string, Dog>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMyApps = async () => {
+      if (!token) return;
+      try {
+        setLoading(true);
+        const res = await fetch(`${API_URL}/adoptions/my`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(err?.message || 'Failed to fetch applications');
+        }
+        const data = await res.json();
+        const items: AdoptionApplication[] = data.items || [];
+        setApps(items);
+
+        // Fetch dog details for UI (best-effort)
+        const dogIds = Array.from(new Set(items.map((a) => a.dogId)));
+        const results = await Promise.all(
+          dogIds.map(async (dogId) => {
+            const r = await fetch(`${API_URL}/dogs/${dogId}`);
+            if (!r.ok) return null;
+            const d = await r.json();
+            return d.item as Dog;
+          })
+        );
+        const map: Record<string, Dog> = {};
+        results.filter(Boolean).forEach((d) => {
+          map[(d as Dog).id] = d as Dog;
+        });
+        setDogsById(map);
+      } catch (e: any) {
+        toast({
+          title: 'Error',
+          description: e.message || 'Failed to load applications',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMyApps();
+  }, [token, toast]);
+
+  const myApplications = useMemo(() => apps, [apps]);
 
   const statusIcons = {
     pending: Clock,
@@ -69,7 +120,7 @@ export default function AdopterDashboard() {
           </CardHeader>
           <CardContent>
             {approvedApplications.map((app) => {
-              const dog = mockDogs.find(d => d.id === app.dogId);
+              const dog = dogsById[app.dogId];
               return (
                 <div key={app.id} className="flex items-center gap-4 p-4 bg-card rounded-xl">
                   <img 
@@ -106,10 +157,14 @@ export default function AdopterDashboard() {
           </Button>
         </CardHeader>
         <CardContent>
-          {myApplications.length > 0 ? (
+          {loading ? (
+            <div className="py-12 flex items-center justify-center">
+              <Spinner size="lg" />
+            </div>
+          ) : myApplications.length > 0 ? (
             <div className="space-y-4">
               {myApplications.map((app) => {
-                const dog = mockDogs.find(d => d.id === app.dogId);
+                const dog = dogsById[app.dogId];
                 const StatusIcon = statusIcons[app.status];
                 
                 return (

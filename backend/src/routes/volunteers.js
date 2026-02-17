@@ -13,7 +13,10 @@ volunteersRouter.use(requireAuth);
 
 // Only superadmin can access volunteer management
 function requireSuperadmin(req, res, next) {
-  if (req.user?.role !== 'superadmin') {
+  const userRole = req.user?.role;
+  // eslint-disable-next-line no-console
+  console.log('[requireSuperadmin] User role:', userRole, 'Full user:', req.user);
+  if (userRole !== 'superadmin') {
     return next(new HttpError(403, 'Only superadmin can manage volunteers'));
   }
   next();

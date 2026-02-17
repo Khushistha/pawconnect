@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, Camera, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -11,8 +11,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { MockMap } from '@/components/maps/MockMap';
+import { ButtonSpinner, LoadingOverlay } from '@/components/ui/spinner';
 import type { Location } from '@/types';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const reportSchema = z.object({
   description: z.string().min(20, 'Please provide more details (at least 20 characters)'),
@@ -25,26 +29,60 @@ type ReportForm = z.infer<typeof reportSchema>;
 
 export default function ReportDogPage() {
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
-  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
 
-  const { register, handleSubmit, formState: { errors } } = useForm<ReportForm>({
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<ReportForm>({
     resolver: zodResolver(reportSchema),
     defaultValues: {
       urgency: 'medium',
+      contactName: user?.name || '',
+      contactPhone: user?.phone || '',
     },
   });
+
+  // Update form when user data is available
+  useEffect(() => {
+    if (user) {
+      setValue('contactName', user.name || '');
+      setValue('contactPhone', user.phone || '');
+    }
+  }, [user, setValue]);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
-      // In a real app, you'd upload to a server. Here we create object URLs for demo
-      const newPhotos = Array.from(files).map(file => URL.createObjectURL(file));
-      setPhotos(prev => [...prev, ...newPhotos].slice(0, 4));
+      const newFiles = Array.from(files).slice(0, 4 - photoFiles.length);
+      setPhotoFiles(prev => [...prev, ...newFiles]);
+
+      // Create previews
+      newFiles.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPhotoPreviews(prev => [...prev, reader.result as string]);
+        };
+        reader.readAsDataURL(file);
+      });
     }
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotoFiles(prev => prev.filter((_, i) => i !== index));
+    setPhotoPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const convertFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
   };
 
   const onSubmit = async (data: ReportForm) => {
@@ -57,18 +95,74 @@ export default function ReportDogPage() {
       return;
     }
 
+    if (!selectedLocation.address || selectedLocation.address.trim().length < 2) {
+      toast({
+        title: 'Address required',
+        description: 'Please enter a valid address for the location',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setIsSubmitting(false);
-    setSubmitted(true);
-    
-    toast({
-      title: 'Report submitted!',
-      description: 'Our rescue team has been notified and will respond shortly.',
-    });
+    try {
+      // Convert photos to base64
+      const photoBase64s: string[] = [];
+      for (const file of photoFiles) {
+        const base64 = await convertFileToBase64(file);
+        photoBase64s.push(base64);
+      }
+
+      // Prepare report data
+      const reportData = {
+        description: data.description,
+        urgency: data.urgency,
+        reportedBy: data.contactName,
+        contactPhone: data.contactPhone,
+        location: {
+          lat: selectedLocation.lat,
+          lng: selectedLocation.lng,
+          address: selectedLocation.address,
+          district: selectedLocation.district,
+        },
+        photos: photoBase64s.length > 0 ? photoBase64s : undefined,
+      };
+
+      const response = await fetch(`${API_URL}/reports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(reportData),
+      });
+
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        throw new Error('Invalid response from server');
+      }
+
+      if (!response.ok) {
+        throw new Error(result?.message || result?.error || 'Failed to submit report');
+      }
+
+      setIsSubmitting(false);
+      setSubmitted(true);
+      
+      toast({
+        title: 'Report submitted!',
+        description: 'Our rescue team has been notified and will respond shortly.',
+      });
+    } catch (error: any) {
+      setIsSubmitting(false);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to submit report. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   if (submitted) {
@@ -88,7 +182,8 @@ export default function ReportDogPage() {
             <Button variant="outline" onClick={() => {
               setSubmitted(false);
               setSelectedLocation(null);
-              setPhotos([]);
+              setPhotoFiles([]);
+              setPhotoPreviews([]);
             }}>
               Submit Another Report
             </Button>
@@ -137,11 +232,41 @@ export default function ReportDogPage() {
                 onLocationSelect={setSelectedLocation}
               />
               {selectedLocation && (
-                <div className="mt-3 p-3 bg-muted rounded-lg">
-                  <p className="text-sm font-medium">Selected Location</p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
-                  </p>
+                <div className="mt-3 space-y-2">
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm font-medium mb-2">Selected Location</p>
+                    <div className="space-y-2">
+                      <div>
+                        <Label htmlFor="location-address" className="text-xs">Address *</Label>
+                        <Input
+                          id="location-address"
+                          value={selectedLocation.address}
+                          onChange={(e) => setSelectedLocation({
+                            ...selectedLocation,
+                            address: e.target.value
+                          })}
+                          placeholder="Enter the address or location description"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="location-district" className="text-xs">District (Optional)</Label>
+                        <Input
+                          id="location-district"
+                          value={selectedLocation.district || ''}
+                          onChange={(e) => setSelectedLocation({
+                            ...selectedLocation,
+                            district: e.target.value || undefined
+                          })}
+                          placeholder="e.g., Kaski, Kathmandu"
+                          className="mt-1"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground pt-1">
+                        Coordinates: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -157,25 +282,26 @@ export default function ReportDogPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {photos.map((photo, index) => (
-                  <div key={index} className="relative aspect-square rounded-lg overflow-hidden">
-                    <img src={photo} alt="" className="w-full h-full object-cover" />
+                {photoPreviews.map((photo, index) => (
+                  <div key={index} className="relative aspect-square rounded-lg overflow-hidden group">
+                    <img src={photo} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
                     <button
                       type="button"
-                      onClick={() => setPhotos(photos.filter((_, i) => i !== index))}
-                      className="absolute top-2 right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full text-xs flex items-center justify-center"
+                      onClick={() => removePhoto(index)}
+                      className="absolute top-2 right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       ×
                     </button>
                   </div>
                 ))}
-                {photos.length < 4 && (
+                {photoFiles.length < 4 && (
                   <label className="aspect-square rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors">
                     <Camera className="w-8 h-8 text-muted-foreground mb-2" />
                     <span className="text-xs text-muted-foreground">Add Photo</span>
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       onChange={handlePhotoUpload}
                       className="hidden"
                     />
@@ -281,13 +407,16 @@ export default function ReportDogPage() {
           </div>
 
           {/* Submit */}
-          <Button 
-            type="submit" 
-            className="w-full btn-hero-primary py-6 text-lg"
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Submitting Report...' : 'Submit Rescue Report'}
-          </Button>
+          <LoadingOverlay isLoading={isSubmitting}>
+            <Button 
+              type="submit" 
+              className="w-full btn-hero-primary py-6 text-lg"
+              disabled={isSubmitting}
+            >
+              {isSubmitting && <ButtonSpinner />}
+              {isSubmitting ? 'Submitting Report...' : 'Submit Rescue Report'}
+            </Button>
+          </LoadingOverlay>
         </form>
       </div>
     </div>

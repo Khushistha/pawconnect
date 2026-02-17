@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Spinner, ButtonSpinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -41,10 +42,12 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 export default function VerificationManagement() {
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [approvingUserId, setApprovingUserId] = useState<string | null>(null);
+  const [rejectingUserId, setRejectingUserId] = useState<string | null>(null);
+  const [isRejecting, setIsRejecting] = useState(false);
   const [viewingUser, setViewingUser] = useState<PendingUser | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
-  const [rejectingUserId, setRejectingUserId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const { token } = useAuth();
   const { toast } = useToast();
@@ -86,6 +89,7 @@ export default function VerificationManagement() {
   const handleApprove = async (userId: string) => {
     if (!token) return;
 
+    setApprovingUserId(userId);
     try {
       const response = await fetch(`${API_URL}/verifications/${userId}/approve`, {
         method: 'POST',
@@ -111,6 +115,8 @@ export default function VerificationManagement() {
         description: error.message || 'Failed to approve user',
         variant: 'destructive',
       });
+    } finally {
+      setApprovingUserId(null);
     }
   };
 
@@ -123,6 +129,8 @@ export default function VerificationManagement() {
   const confirmReject = async () => {
     if (!rejectingUserId || !token) return;
 
+    setIsRejecting(true);
+    const currentRejectingId = rejectingUserId;
     try {
       const response = await fetch(`${API_URL}/verifications/${rejectingUserId}/reject`, {
         method: 'POST',
@@ -155,6 +163,8 @@ export default function VerificationManagement() {
         description: error.message || 'Failed to reject user',
         variant: 'destructive',
       });
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -166,7 +176,7 @@ export default function VerificationManagement() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <Spinner size="lg" />
       </div>
     );
   }
@@ -245,7 +255,9 @@ export default function VerificationManagement() {
                       size="sm"
                       onClick={() => handleReject(user.id)}
                       className="text-destructive"
+                      disabled={approvingUserId === user.id || rejectingUserId === user.id}
                     >
+                      {rejectingUserId === user.id && <ButtonSpinner />}
                       <XCircle className="w-4 h-4 mr-2" />
                       Reject
                     </Button>
@@ -253,7 +265,9 @@ export default function VerificationManagement() {
                       size="sm"
                       onClick={() => handleApprove(user.id)}
                       className="bg-status-treated hover:bg-status-treated/90"
+                      disabled={approvingUserId === user.id || rejectingUserId === user.id}
                     >
+                      {approvingUserId === user.id && <ButtonSpinner />}
                       <CheckCircle2 className="w-4 h-4 mr-2" />
                       Approve
                     </Button>
@@ -323,8 +337,10 @@ export default function VerificationManagement() {
             <AlertDialogAction
               onClick={confirmReject}
               className="bg-destructive hover:bg-destructive/90"
+              disabled={isRejecting}
             >
-              Reject
+              {isRejecting && <ButtonSpinner />}
+              {isRejecting ? 'Rejecting...' : 'Reject'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

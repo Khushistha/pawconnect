@@ -8,6 +8,11 @@ if (env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SE
     api_key: env.CLOUDINARY_API_KEY,
     api_secret: env.CLOUDINARY_API_SECRET,
   });
+  // eslint-disable-next-line no-console
+  console.log('✅ Cloudinary configured for image uploads');
+} else {
+  // eslint-disable-next-line no-console
+  console.warn('⚠️  Cloudinary not configured - photo uploads will be skipped');
 }
 
 /**

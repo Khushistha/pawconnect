@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Heart, Mail, Lock, Eye, EyeOff, AlertCircle, Home } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,6 +15,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { ButtonSpinner } from '@/components/ui/spinner';
 import { useAuth } from '@/contexts/AuthContext';
 
 const loginSchema = z.object({
@@ -29,6 +30,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const { login, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -39,6 +41,7 @@ export default function LoginPage() {
     const success = await login(data.email, data.password);
     
     if (success) {
+      const redirectTo = (location.state as any)?.from;
       // Small delay to ensure user state is updated in localStorage
       setTimeout(() => {
         try {
@@ -48,19 +51,23 @@ export default function LoginPage() {
             const currentUser = authData?.user;
             
             if (currentUser) {
+              // If user came here from a protected action (like applying to adopt), return them back.
+              if (typeof redirectTo === 'string' && redirectTo.startsWith('/') && redirectTo !== '/login') {
+                navigate(redirectTo, { replace: true });
+                return;
+              }
               switch (currentUser.role) {
                 case 'superadmin':
                 case 'ngo_admin':
                   navigate('/dashboard', { replace: true });
                   return;
                 case 'volunteer':
-                  navigate('/volunteer', { replace: true });
+                case 'adopter':
+                  // Volunteers and adopters go to landing page, can access dashboard via profile menu
+                  navigate('/', { replace: true });
                   return;
                 case 'veterinarian':
                   navigate('/vet', { replace: true });
-                  return;
-                case 'adopter':
-                  navigate('/adopter', { replace: true });
                   return;
               }
             }
@@ -170,6 +177,7 @@ export default function LoginPage() {
             </div>
 
             <Button type="submit" className="w-full btn-hero-primary" disabled={isLoading}>
+              {isLoading && <ButtonSpinner />}
               {isLoading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>

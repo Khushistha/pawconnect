@@ -9,8 +9,12 @@ import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
 import { dogsRouter } from './routes/dogs.js';
 import { reportsRouter } from './routes/reports.js';
+import { adoptionsRouter } from './routes/adoptions.js';
+import { notificationsRouter } from './routes/notifications.js';
 import { volunteersRouter } from './routes/volunteers.js';
 import { verificationsRouter } from './routes/verifications.js';
+import { profileRouter } from './routes/profile.js';
+import { ngosRouter } from './routes/ngos.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { pingDb } from './db/pool.js';
 import { migrate } from './db/migrate.js';
@@ -38,16 +42,24 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '1mb' }));
+// Increased limit to handle base64-encoded images (base64 increases size by ~33%)
+// Allow up to 10MB for reports with photos
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/', (_req, res) => res.json({ ok: true, service: 'rescue-roots-nepal-backend' }));
 
 app.use('/api', healthRouter);
 app.use('/api', authRouter);
-app.use('/api', dogsRouter);
+// Mount profile router early to avoid conflicts with other routers
+app.use('/api', profileRouter);
+// Mount reports router BEFORE dogs router to avoid route conflicts
 app.use('/api', reportsRouter);
+app.use('/api', dogsRouter);
+app.use('/api', adoptionsRouter);
+app.use('/api', notificationsRouter);
 app.use('/api', volunteersRouter);
 app.use('/api', verificationsRouter);
+app.use('/api', ngosRouter);
 
 app.use(errorHandler);
 

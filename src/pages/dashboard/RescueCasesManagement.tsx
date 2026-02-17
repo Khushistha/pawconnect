@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit2, Trash2, Search, X, Upload, MapPin, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, X, Upload, MapPin, RefreshCw, AlertCircle, Phone, PawPrint } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,12 +30,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { MockMap } from '@/components/maps/MockMap';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { Spinner, ButtonSpinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import type { Dog, Location, DogStatus, DogGender, DogSize } from '@/types';
+import type { Dog, Location, DogStatus, DogGender, DogSize, RescueReport, RescueStatus } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -43,15 +45,22 @@ export default function RescueCasesManagement() {
   const { token } = useAuth();
   const { toast } = useToast();
   const [dogs, setDogs] = useState<Dog[]>([]);
+  const [reports, setReports] = useState<RescueReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingReports, setLoadingReports] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchQueryReports, setSearchQueryReports] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingDog, setEditingDog] = useState<Dog | null>(null);
+  const [editingReport, setEditingReport] = useState<RescueReport | null>(null);
   const [dogToDelete, setDogToDelete] = useState<Dog | null>(null);
+  const [reportToDelete, setReportToDelete] = useState<RescueReport | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [creatingDog, setCreatingDog] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -97,9 +106,33 @@ export default function RescueCasesManagement() {
     }
   }, [token, toast]);
 
+  const fetchReports = useCallback(async () => {
+    if (!token) return;
+    setLoadingReports(true);
+    try {
+      const response = await fetch(`${API_URL}/reports/all`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch reports');
+      const data = await response.json();
+      setReports(data.items || []);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load reports.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingReports(false);
+    }
+  }, [token, toast]);
+
   useEffect(() => {
     fetchDogs();
-  }, [fetchDogs]);
+    fetchReports();
+  }, [fetchDogs, fetchReports]);
 
   const handleCreate = () => {
     setEditingDog(null);
@@ -293,33 +326,58 @@ export default function RescueCasesManagement() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!dogToDelete || !token) return;
+    if (!token) return;
     setDeleting(true);
     try {
-      const response = await fetch(`${API_URL}/dogs/${dogToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
+      if (dogToDelete) {
+        const response = await fetch(`${API_URL}/dogs/${dogToDelete.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to delete rescue case');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to delete rescue case');
+        }
+
+        toast({
+          title: 'Success',
+          description: 'Rescue case deleted successfully.',
+        });
+        fetchDogs();
+      } else if (reportToDelete) {
+        // Note: Backend doesn't have DELETE endpoint for reports yet, but we can add it
+        // For now, we'll just update status to cancelled
+        const response = await fetch(`${API_URL}/reports/${reportToDelete.id}/status`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: 'cancelled' }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to cancel report');
+        }
+
+        toast({
+          title: 'Success',
+          description: 'Report cancelled successfully.',
+        });
+        fetchReports();
       }
-
-      toast({
-        title: 'Success',
-        description: 'Rescue case deleted successfully.',
-      });
 
       setIsDeleteDialogOpen(false);
       setDogToDelete(null);
-      fetchDogs();
+      setReportToDelete(null);
     } catch (error: any) {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete rescue case.',
+        description: error.message || 'Failed to delete.',
         variant: 'destructive',
       });
     } finally {
@@ -340,11 +398,11 @@ export default function RescueCasesManagement() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Rescue Cases Management</h1>
-          <p className="text-muted-foreground">Create, edit, and manage rescue cases (dogs)</p>
+          <p className="text-muted-foreground">Manage manual cases and volunteer reports</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={fetchDogs} disabled={loading || refreshing} variant="outline" size="sm">
-            <RefreshCw className={cn('w-4 h-4 mr-2', refreshing && 'animate-spin')} />
+          <Button onClick={() => { fetchDogs(); fetchReports(); }} disabled={loading || refreshing || loadingReports} variant="outline" size="sm">
+            <RefreshCw className={cn('w-4 h-4 mr-2', (refreshing || loadingReports) && 'animate-spin')} />
             Refresh
           </Button>
           <Button onClick={handleCreate}>
@@ -354,22 +412,31 @@ export default function RescueCasesManagement() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by name, breed, location..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-        />
-      </div>
+      {/* Tabs */}
+      <Tabs defaultValue="manual" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="manual">Manual Cases ({dogs.length})</TabsTrigger>
+          <TabsTrigger value="reports">Volunteer Reports ({reports.length})</TabsTrigger>
+        </TabsList>
 
-      {/* Dogs List */}
+        {/* Manual Cases Tab */}
+        <TabsContent value="manual" className="space-y-4">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, breed, location..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* Dogs List */}
       {loading ? (
         <Card>
           <CardContent className="p-12 text-center">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <Spinner size="lg" className="mx-auto" />
           </CardContent>
         </Card>
       ) : filteredDogs.length === 0 ? (
@@ -436,6 +503,229 @@ export default function RescueCasesManagement() {
           ))}
         </div>
       )}
+        </TabsContent>
+
+        {/* Volunteer Reports Tab */}
+        <TabsContent value="reports" className="space-y-4">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search reports by description, location, reporter..."
+              value={searchQueryReports}
+              onChange={(e) => setSearchQueryReports(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* Reports List */}
+          {loadingReports ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <Spinner size="lg" className="mx-auto" />
+              </CardContent>
+            </Card>
+          ) : reports.filter(r =>
+            r.description.toLowerCase().includes(searchQueryReports.toLowerCase()) ||
+            r.location.address.toLowerCase().includes(searchQueryReports.toLowerCase()) ||
+            r.location.district?.toLowerCase().includes(searchQueryReports.toLowerCase()) ||
+            r.reportedBy.toLowerCase().includes(searchQueryReports.toLowerCase())
+          ).length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <p className="text-muted-foreground">No reports found.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {reports.filter(r =>
+                r.description.toLowerCase().includes(searchQueryReports.toLowerCase()) ||
+                r.location.address.toLowerCase().includes(searchQueryReports.toLowerCase()) ||
+                r.location.district?.toLowerCase().includes(searchQueryReports.toLowerCase()) ||
+                r.reportedBy.toLowerCase().includes(searchQueryReports.toLowerCase())
+              ).map((report) => (
+                <Card key={report.id} className="overflow-hidden">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-4">
+                      {report.photos[0] && (
+                        <img
+                          src={report.photos[0]}
+                          alt="Report"
+                          className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <StatusBadge status={report.status} />
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            report.urgency === 'critical' ? 'bg-destructive/10 text-destructive' :
+                            report.urgency === 'high' ? 'bg-status-reported/10 text-status-reported' :
+                            'bg-muted text-muted-foreground'
+                          }`}>
+                            {report.urgency.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-sm mb-2">{report.description}</p>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {report.location.address}
+                          </span>
+                          {report.contactPhone && (
+                            <span className="flex items-center gap-1">
+                              <Phone className="w-3 h-3" />
+                              {report.contactPhone}
+                            </span>
+                          )}
+                          <span>Reported by: {report.reportedBy}</span>
+                          <span>{new Date(report.reportedAt).toLocaleDateString()}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!report.dogId && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={async () => {
+                                if (!token) return;
+                                setCreatingDog(report.id);
+                                try {
+                                  const response = await fetch(`${API_URL}/reports/${report.id}/create-dog`, {
+                                    method: 'POST',
+                                    headers: {
+                                      'Authorization': `Bearer ${token}`,
+                                    },
+                                  });
+
+                                  if (!response.ok) {
+                                    const error = await response.json();
+                                    throw new Error(error.message || 'Failed to create dog from report');
+                                  }
+
+                                  const data = await response.json();
+                                  
+                                  // Update report to include dogId
+                                  setReports(prev => prev.map(r => 
+                                    r.id === report.id ? { ...r, dogId: data.item.id } : r
+                                  ));
+
+                                  // Refresh dogs list
+                                  fetchDogs();
+
+                                  toast({
+                                    title: 'Success',
+                                    description: 'Dog created from report successfully. You can now find it in the Dogs section.',
+                                  });
+                                } catch (error: any) {
+                                  toast({
+                                    title: 'Error',
+                                    description: error.message || 'Failed to create dog from report',
+                                    variant: 'destructive',
+                                  });
+                                } finally {
+                                  setCreatingDog(null);
+                                }
+                              }}
+                              disabled={creatingDog === report.id}
+                              className="bg-primary text-primary-foreground hover:bg-primary/90"
+                            >
+                              {creatingDog === report.id ? (
+                                <>
+                                  <ButtonSpinner />
+                                  Creating...
+                                </>
+                              ) : (
+                                <>
+                                  <PawPrint className="w-4 h-4 mr-1" />
+                                  Create Dog
+                                </>
+                              )}
+                            </Button>
+                          )}
+                          {report.dogId && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-800">
+                              Dog Created
+                            </span>
+                          )}
+                          <Select
+                            value={report.status}
+                            onValueChange={(value) => {
+                              const updateStatus = async () => {
+                                if (!token) return;
+                                setUpdatingStatus(report.id);
+                                try {
+                                  const response = await fetch(`${API_URL}/reports/${report.id}/status`, {
+                                    method: 'PATCH',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({ status: value }),
+                                  });
+
+                                  if (!response.ok) {
+                                    const error = await response.json();
+                                    throw new Error(error.message || 'Failed to update status');
+                                  }
+
+                                  setReports(prev => prev.map(r => 
+                                    r.id === report.id ? { ...r, status: value as RescueStatus } : r
+                                  ));
+
+                                  toast({
+                                    title: 'Success',
+                                    description: 'Report status updated successfully',
+                                  });
+                                } catch (error: any) {
+                                  toast({
+                                    title: 'Error',
+                                    description: error.message || 'Failed to update status',
+                                    variant: 'destructive',
+                                  });
+                                } finally {
+                                  setUpdatingStatus(null);
+                                }
+                              };
+                              updateStatus();
+                            }}
+                            disabled={updatingStatus === report.id || creatingDog === report.id}
+                          >
+                            <SelectTrigger className="w-[140px] h-8 text-xs">
+                              {updatingStatus === report.id ? (
+                                <ButtonSpinner />
+                              ) : (
+                                <SelectValue />
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="assigned">Assigned</SelectItem>
+                              <SelectItem value="in_progress">In Progress</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="cancelled">Cancelled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setReportToDelete(report);
+                              setIsDeleteDialogOpen(true);
+                            }}
+                            className="text-destructive hover:text-destructive"
+                            disabled={creatingDog === report.id}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Create/Edit Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -660,6 +950,7 @@ export default function RescueCasesManagement() {
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
+                {submitting && <ButtonSpinner />}
                 {submitting ? (editingDog ? 'Updating...' : 'Creating...') : (editingDog ? 'Update' : 'Create')}
               </Button>
             </DialogFooter>
@@ -671,15 +962,22 @@ export default function RescueCasesManagement() {
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete {dogToDelete?.name}?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {dogToDelete 
+                ? `Are you sure you want to delete ${dogToDelete.name}?`
+                : `Are you sure you want to cancel this report?`}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the rescue case and all associated data.
+              {dogToDelete
+                ? 'This action cannot be undone. This will permanently delete the rescue case and all associated data.'
+                : 'This will mark the report as cancelled. This action can be reversed by updating the status.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive" disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting && <ButtonSpinner />}
+              {deleting ? (dogToDelete ? 'Deleting...' : 'Cancelling...') : (dogToDelete ? 'Delete' : 'Cancel Report')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

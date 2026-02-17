@@ -8,7 +8,10 @@ import { uploadBase64Image } from '../utils/cloudinary.js';
 
 export const dogsRouter = Router();
 
-function mapDogRow(row, photoUrls = []) {
+// Public routes (no authentication required)
+// These routes are defined first to ensure they're accessible without auth
+
+function mapDogRow(row, photoUrls = [], reportInfo = null) {
   return {
     id: row.id,
     name: row.name,
@@ -33,18 +36,35 @@ function mapDogRow(row, photoUrls = []) {
     rescuedAt: row.rescued_at ? new Date(row.rescued_at).toISOString() : undefined,
     adoptedAt: row.adopted_at ? new Date(row.adopted_at).toISOString() : undefined,
     adopterId: row.adopter_id ?? undefined,
+    fromReport: reportInfo ? {
+      reportId: reportInfo.id,
+      reportedBy: reportInfo.reported_by,
+      reportedAt: new Date(reportInfo.reported_at).toISOString(),
+      urgency: reportInfo.urgency,
+    } : undefined,
   };
 }
 
+// PUBLIC ROUTE - No authentication required
 dogsRouter.get('/dogs', async (req, res, next) => {
+  // eslint-disable-next-line no-console
+  console.log('[PUBLIC GET /dogs] Route hit - no auth required');
   try {
     const { status, district } = req.query;
 
     const where = [];
     const params = [];
     if (status) {
-      where.push('d.status = ?');
-      params.push(String(status));
+      const s = String(status);
+      // Special case: adoptable should also include dogs whose linked rescue report is completed.
+      // This covers legacy rows where the dog.status wasn't updated when report status changed.
+      if (s === 'adoptable') {
+        where.push(`(d.status = ? OR r.status = 'completed')`);
+        params.push(s);
+      } else {
+        where.push('d.status = ?');
+        params.push(s);
+      }
     }
     if (district) {
       where.push('d.location_district = ?');
@@ -52,8 +72,14 @@ dogsRouter.get('/dogs', async (req, res, next) => {
     }
 
     const sql =
-      `SELECT d.*
+      `SELECT d.*, 
+              r.id as report_id, 
+              r.status as report_status,
+              r.reported_by, 
+              r.reported_at as report_reported_at, 
+              r.urgency
        FROM dogs d
+       LEFT JOIN rescue_reports r ON r.dog_id = d.id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
        ORDER BY d.reported_at DESC
        LIMIT 200`;
@@ -76,8 +102,26 @@ dogsRouter.get('/dogs', async (req, res, next) => {
       }, new Map());
     }
 
+    const statusQuery = status ? String(status) : null;
+
     res.json({
-      items: dogRows.map((r) => mapDogRow(r, photosByDog.get(r.id) ?? [])),
+      items: dogRows.map((r) => {
+        const reportInfo = r.report_id ? {
+          id: r.report_id,
+          reported_by: r.reported_by,
+          reported_at: r.report_reported_at,
+          urgency: r.urgency,
+        } : null;
+
+        // If caller asked for adoptable dogs, treat "completed report" as adoptable in the API response.
+        // This keeps UI consistent even for older rows where dog.status wasn't updated.
+        const effectiveRow =
+          statusQuery === 'adoptable' && r.report_status === 'completed'
+            ? { ...r, status: 'adoptable' }
+            : r;
+
+        return mapDogRow(effectiveRow, photosByDog.get(r.id) ?? [], reportInfo);
+      }),
     });
   } catch (err) {
     next(err);
@@ -87,7 +131,13 @@ dogsRouter.get('/dogs', async (req, res, next) => {
 dogsRouter.get('/dogs/:id', async (req, res, next) => {
   try {
     const id = req.params.id;
-    const [rows] = await pool.query(`SELECT * FROM dogs WHERE id = ? LIMIT 1`, [id]);
+    const [rows] = await pool.query(
+      `SELECT d.*, r.id as report_id, r.reported_by, r.reported_at as report_reported_at, r.urgency
+       FROM dogs d
+       LEFT JOIN rescue_reports r ON r.dog_id = d.id
+       WHERE d.id = ? LIMIT 1`,
+      [id]
+    );
     const row = rows?.[0];
     if (!row) throw new HttpError(404, 'Dog not found');
 
@@ -96,17 +146,20 @@ dogsRouter.get('/dogs/:id', async (req, res, next) => {
       [id]
     );
 
-    res.json({ item: mapDogRow(row, photoRows.map((p) => p.url)) });
+    const reportInfo = row.report_id ? {
+      id: row.report_id,
+      reported_by: row.reported_by,
+      reported_at: row.report_reported_at,
+      urgency: row.urgency,
+    } : null;
+
+    res.json({ item: mapDogRow(row, photoRows.map((p) => p.url), reportInfo) });
   } catch (err) {
     next(err);
   }
 });
 
 // ========== NGO Admin CRUD Routes ==========
-
-// Require authentication for all admin routes
-const adminDogsRouter = Router();
-adminDogsRouter.use(requireAuth);
 
 // Middleware to check if user is NGO admin or superadmin
 function requireNGOAdmin(req, _res, next) {
@@ -115,8 +168,6 @@ function requireNGOAdmin(req, _res, next) {
   }
   next();
 }
-
-adminDogsRouter.use(requireNGOAdmin);
 
 const createDogSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -142,7 +193,7 @@ const createDogSchema = z.object({
 const updateDogSchema = createDogSchema.partial();
 
 // POST /api/dogs - Create a new rescue case (dog)
-adminDogsRouter.post('/dogs', async (req, res, next) => {
+dogsRouter.post('/dogs', requireAuth, requireNGOAdmin, async (req, res, next) => {
   try {
     const data = createDogSchema.parse(req.body);
     const id = uuidv4();
@@ -168,12 +219,14 @@ adminDogsRouter.post('/dogs', async (req, res, next) => {
     }
 
     // Insert dog record
+    const createdBy = req.user?.sub || req.user?.id || null;
+
     await pool.query(
       `INSERT INTO dogs 
        (id, name, breed, estimated_age, gender, size, status, description, rescue_story,
         location_lat, location_lng, location_address, location_district,
-        vaccinated, sterilized, medical_notes, reported_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        vaccinated, sterilized, medical_notes, reported_at, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -192,6 +245,7 @@ adminDogsRouter.post('/dogs', async (req, res, next) => {
         data.sterilized ? 1 : 0,
         data.medicalNotes ?? null,
         now,
+        createdBy,
       ]
     );
 
@@ -206,8 +260,14 @@ adminDogsRouter.post('/dogs', async (req, res, next) => {
       );
     }
 
-    // Fetch created dog with photos
-    const [rows] = await pool.query(`SELECT * FROM dogs WHERE id = ? LIMIT 1`, [id]);
+    // Fetch created dog with photos and report info
+    const [rows] = await pool.query(
+      `SELECT d.*, r.id as report_id, r.reported_by, r.reported_at as report_reported_at, r.urgency
+       FROM dogs d
+       LEFT JOIN rescue_reports r ON r.dog_id = d.id
+       WHERE d.id = ? LIMIT 1`,
+      [id]
+    );
     const row = rows?.[0];
     if (!row) throw new HttpError(500, 'Failed to create dog');
 
@@ -216,14 +276,21 @@ adminDogsRouter.post('/dogs', async (req, res, next) => {
       [id]
     );
 
-    res.status(201).json({ item: mapDogRow(row, photoRows.map((p) => p.url)) });
+    const reportInfo = row.report_id ? {
+      id: row.report_id,
+      reported_by: row.reported_by,
+      reported_at: row.report_reported_at,
+      urgency: row.urgency,
+    } : null;
+
+    res.status(201).json({ item: mapDogRow(row, photoRows.map((p) => p.url), reportInfo) });
   } catch (err) {
     next(err);
   }
 });
 
 // PUT /api/dogs/:id - Update a rescue case (dog)
-adminDogsRouter.put('/dogs/:id', async (req, res, next) => {
+dogsRouter.put('/dogs/:id', requireAuth, requireNGOAdmin, async (req, res, next) => {
   try {
     const { id } = req.params;
     const data = updateDogSchema.parse(req.body);
@@ -232,6 +299,15 @@ adminDogsRouter.put('/dogs/:id', async (req, res, next) => {
     const [existing] = await pool.query(`SELECT id FROM dogs WHERE id = ? LIMIT 1`, [id]);
     if (existing.length === 0) {
       throw new HttpError(404, 'Dog not found');
+    }
+
+    // Ensure handler NGO is recorded (needed for adoption notifications)
+    const updaterId = req.user?.sub || req.user?.id || null;
+    if (updaterId) {
+      await pool.query(
+        `UPDATE dogs SET created_by = COALESCE(created_by, ?) WHERE id = ?`,
+        [updaterId, id]
+      );
     }
 
     // Build update query dynamically
@@ -331,8 +407,14 @@ adminDogsRouter.put('/dogs/:id', async (req, res, next) => {
       }
     }
 
-    // Fetch updated dog
-    const [rows] = await pool.query(`SELECT * FROM dogs WHERE id = ? LIMIT 1`, [id]);
+    // Fetch updated dog with report info
+    const [rows] = await pool.query(
+      `SELECT d.*, r.id as report_id, r.reported_by, r.reported_at as report_reported_at, r.urgency
+       FROM dogs d
+       LEFT JOIN rescue_reports r ON r.dog_id = d.id
+       WHERE d.id = ? LIMIT 1`,
+      [id]
+    );
     const row = rows?.[0];
     if (!row) throw new HttpError(500, 'Failed to fetch updated dog');
 
@@ -341,14 +423,21 @@ adminDogsRouter.put('/dogs/:id', async (req, res, next) => {
       [id]
     );
 
-    res.json({ item: mapDogRow(row, photoRows.map((p) => p.url)) });
+    const reportInfo = row.report_id ? {
+      id: row.report_id,
+      reported_by: row.reported_by,
+      reported_at: row.report_reported_at,
+      urgency: row.urgency,
+    } : null;
+
+    res.json({ item: mapDogRow(row, photoRows.map((p) => p.url), reportInfo) });
   } catch (err) {
     next(err);
   }
 });
 
 // DELETE /api/dogs/:id - Delete a rescue case (dog)
-adminDogsRouter.delete('/dogs/:id', async (req, res, next) => {
+dogsRouter.delete('/dogs/:id', requireAuth, requireNGOAdmin, async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -366,7 +455,4 @@ adminDogsRouter.delete('/dogs/:id', async (req, res, next) => {
     next(err);
   }
 });
-
-// Mount admin routes
-dogsRouter.use(adminDogsRouter);
 

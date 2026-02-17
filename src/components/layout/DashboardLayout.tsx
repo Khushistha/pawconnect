@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   Heart, 
@@ -13,12 +13,20 @@ import {
   Bell,
   Stethoscope,
   MapPin,
-  FileText
+  FileText,
+  Building2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/types';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 interface NavItem {
   icon: React.ElementType;
@@ -32,13 +40,13 @@ const navItems: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard', roles: ['superadmin'] },
   { icon: Users, label: 'Volunteers', href: '/dashboard/volunteers', roles: ['superadmin'] },
   { icon: FileText, label: 'Verifications', href: '/dashboard/verifications', roles: ['superadmin'] },
+  { icon: Building2, label: 'NGOs', href: '/dashboard/ngos', roles: ['superadmin'] },
   
   // NGO Admin
   { icon: LayoutDashboard, label: 'Overview', href: '/dashboard', roles: ['ngo_admin'] },
   { icon: ClipboardList, label: 'Rescue Cases', href: '/dashboard/rescues', roles: ['ngo_admin'] },
   { icon: PawPrint, label: 'Dogs', href: '/dashboard/dogs', roles: ['ngo_admin'] },
   { icon: FileText, label: 'Adoptions', href: '/dashboard/adoptions', roles: ['ngo_admin'] },
-  { icon: Users, label: 'Team', href: '/dashboard/team', roles: ['ngo_admin'] },
   
   // Volunteer
   { icon: LayoutDashboard, label: 'My Tasks', href: '/volunteer', roles: ['volunteer'] },
@@ -54,10 +62,61 @@ const navItems: NavItem[] = [
   { icon: PawPrint, label: 'Browse Dogs', href: '/adopt', roles: ['adopter'] },
 ];
 
-export function DashboardLayout() {
+interface DashboardLayoutProps {
+  children?: ReactNode;
+}
+
+export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout, isAuthenticated } = useAuth();
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    title: string;
+    message: string;
+    timestamp: Date;
+    type: 'info' | 'success' | 'warning' | 'error';
+  }>>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const { user, logout, isAuthenticated, token } = useAuth();
   const location = useLocation();
+
+  useEffect(() => {
+    if (token && (user?.role === 'ngo_admin' || user?.role === 'superadmin')) {
+      fetchNotifications();
+      // Poll for new notifications every 30 seconds
+      const interval = setInterval(fetchNotifications, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [token, user]);
+
+  const fetchNotifications = async () => {
+    if (!token) return;
+    setLoadingNotifications(true);
+    try {
+      const response = await fetch(`${API_URL}/notifications`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const newNotifications = (data.items || [])
+          .slice(0, 20)
+          .map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            timestamp: new Date(n.createdAt),
+            type: n.type,
+          }));
+
+        setNotifications(newNotifications);
+      }
+    } catch (error) {
+      // Silently fail
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
 
   // Redirect if not authenticated
   if (!isAuthenticated || !user) {
@@ -142,11 +201,19 @@ export function DashboardLayout() {
               to="/profile"
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-sidebar-accent/50 transition-colors"
             >
-              <div className="w-9 h-9 rounded-full bg-sidebar-accent flex items-center justify-center">
-                <span className="text-sm font-semibold text-sidebar-foreground">
-                  {user.name.charAt(0)}
-                </span>
-              </div>
+              {user.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user.name}
+                  className="w-9 h-9 rounded-full object-cover border border-sidebar-border"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-sidebar-accent flex items-center justify-center">
+                  <span className="text-sm font-semibold text-sidebar-foreground">
+                    {user.name.charAt(0)}
+                  </span>
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-sidebar-foreground truncate">
                   {user.name}
@@ -177,12 +244,76 @@ export function DashboardLayout() {
           <div className="flex-1" />
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-secondary text-secondary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
-                2
-              </span>
-            </Button>
+            {(user?.role === 'ngo_admin' || user?.role === 'superadmin') && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="w-5 h-5" />
+                    {notifications.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                        {notifications.length > 9 ? '9+' : notifications.length}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0" align="end">
+                  <div className="p-4 border-b">
+                    <h4 className="font-semibold text-sm">Notifications</h4>
+                  </div>
+                  <div className="max-h-[400px] overflow-y-auto">
+                    {loadingNotifications ? (
+                      <div className="p-8 text-center text-sm text-muted-foreground">
+                        Loading...
+                      </div>
+                    ) : notifications.length === 0 ? (
+                      <div className="p-8 text-center text-sm text-muted-foreground">
+                        No new notifications
+                      </div>
+                    ) : (
+                      <div className="divide-y">
+                        {notifications.map((notification) => (
+                          <div
+                            key={notification.id}
+                            className="p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={cn(
+                                'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                                notification.type === 'error' && 'bg-destructive',
+                                notification.type === 'warning' && 'bg-yellow-500',
+                                notification.type === 'success' && 'bg-green-500',
+                                notification.type === 'info' && 'bg-blue-500'
+                              )} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">{notification.title}</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {notification.message}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {notification.timestamp.toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div className="p-2 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-xs"
+                        onClick={() => setNotifications([])}
+                      >
+                        Clear all
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            )}
             <Button variant="ghost" size="icon" onClick={logout}>
               <LogOut className="w-5 h-5" />
             </Button>
@@ -191,7 +322,7 @@ export function DashboardLayout() {
 
         {/* Page Content */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto bg-background">
-          <Outlet />
+          {children || <Outlet />}
         </main>
       </div>
     </div>

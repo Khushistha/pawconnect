@@ -16,6 +16,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { useToast } from '@/hooks/use-toast';
+import { ButtonSpinner } from '@/components/ui/spinner';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -287,6 +288,7 @@ export default function ResetPasswordPage() {
             </div>
 
             <Button type="submit" className="w-full btn-hero-primary" disabled={isSubmitting}>
+              {isSubmitting && <ButtonSpinner />}
               {isSubmitting ? 'Resetting Password...' : 'Reset Password'}
             </Button>
           </form>

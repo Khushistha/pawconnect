@@ -16,6 +16,25 @@ export async function migrate({ closePool = false } = {}) {
   // schema.sql contains only CREATE TABLE statements, safe to run in one go.
   await pool.query(sql);
 
+  // ----- Additive migrations (safe to run multiple times) -----
+  async function columnExists(table, column) {
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) as cnt
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = ?
+         AND COLUMN_NAME = ?`,
+      [table, column]
+    );
+    return Number(rows?.[0]?.cnt ?? 0) > 0;
+  }
+
+  // dogs.created_by - used to route adoption notifications to the NGO who manages the dog
+  if (!(await columnExists('dogs', 'created_by'))) {
+    await pool.query(`ALTER TABLE dogs ADD COLUMN created_by CHAR(36) NULL AFTER adopter_id`);
+    await pool.query(`CREATE INDEX idx_dogs_created_by ON dogs(created_by)`);
+  }
+
   // Seed superadmin if configured and not present
   if (env.SUPERADMIN_EMAIL && env.SUPERADMIN_PASSWORD) {
     const email = env.SUPERADMIN_EMAIL.toLowerCase();

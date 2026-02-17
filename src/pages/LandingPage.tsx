@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Heart, 
@@ -14,10 +15,36 @@ import heroImage from '@/assets/hero-dog.jpg';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DogCard } from '@/components/dogs/DogCard';
-import { mockDogs, mockStats } from '@/data/mockData';
+import { Spinner } from '@/components/ui/spinner';
+import { mockStats } from '@/data/mockData';
+import type { Dog } from '@/types';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function LandingPage() {
-  const adoptableDogs = mockDogs.filter(d => d.status === 'adoptable').slice(0, 3);
+  const [adoptableDogs, setAdoptableDogs] = useState<Dog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDogs = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`${API_URL}/dogs?status=adoptable`);
+        if (!response.ok) throw new Error('Failed to fetch dogs');
+        const data = await response.json();
+        // Get first 3 adoptable dogs
+        setAdoptableDogs((data.items || []).slice(0, 3));
+      } catch (error) {
+        console.error('Error fetching dogs:', error);
+        // On error, set empty array (no dogs shown)
+        setAdoptableDogs([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDogs();
+  }, []);
 
   const stats = [
     { value: mockStats.totalRescues.toLocaleString(), label: 'Dogs Rescued', icon: PawPrint },
@@ -177,17 +204,29 @@ export default function LandingPage() {
             </Button>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {adoptableDogs.map((dog, index) => (
-              <div 
-                key={dog.id} 
-                className="animate-fade-in"
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
-                <DogCard dog={dog} />
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner size="lg" />
+            </div>
+          ) : adoptableDogs.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {adoptableDogs.map((dog, index) => (
+                <div 
+                  key={dog.id} 
+                  className="animate-fade-in"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                  <DogCard dog={dog} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <PawPrint className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No dogs available for adoption at the moment.</p>
+              <p className="text-sm mt-2">Check back soon for new arrivals!</p>
+            </div>
+          )}
         </div>
       </section>
 

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/breadcrumb';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { ButtonSpinner } from '@/components/ui/spinner';
 import type { UserRole } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -173,19 +174,21 @@ export default function RegisterPage() {
         throw new Error(result.message || 'Registration failed');
       }
 
+      // Show success toast and redirect to login
       if (result.requiresVerification) {
         toast({
           title: 'Registration successful',
           description: result.message || 'Your account is pending verification. You will be notified once approved.',
         });
-        navigate('/login');
       } else {
-        // Auto-login for roles that don't need verification
-        const success = await registerUser(data.email, data.password, data.name, selectedRole);
-        if (success) {
-          navigate('/');
-        }
+        toast({
+          title: 'Registration successful',
+          description: 'Your account has been created successfully. Please login to continue.',
+        });
       }
+      
+      // Always redirect to login page after successful registration
+      navigate('/login', { replace: true });
     } catch (error: any) {
       toast({
         title: 'Registration failed',
@@ -464,6 +467,7 @@ export default function RegisterPage() {
             </div>
 
             <Button type="submit" className="w-full btn-hero-primary" disabled={isLoading || isSubmitting}>
+              {(isLoading || isSubmitting) && <ButtonSpinner />}
               {isLoading || isSubmitting ? 'Creating account...' : 'Create Account'}
             </Button>
           </form>

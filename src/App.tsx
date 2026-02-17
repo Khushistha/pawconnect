@@ -31,6 +31,11 @@ import AdopterDashboard from "@/pages/dashboard/AdopterDashboard";
 import VolunteersManagement from "@/pages/dashboard/VolunteersManagement";
 import VerificationManagement from "@/pages/dashboard/VerificationManagement";
 import RescueCasesManagement from "@/pages/dashboard/RescueCasesManagement";
+import DogsManagement from "@/pages/dashboard/DogsManagement";
+import NGOManagement from "@/pages/dashboard/NGOManagement";
+import ConditionalDashboard from "@/components/dashboard/ConditionalDashboard";
+import AdoptionsManagement from "@/pages/dashboard/AdoptionsManagement";
+import ProfilePage from "@/pages/ProfilePage";
 
 // Components
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
@@ -73,13 +78,36 @@ const App = () => (
                 </ProtectedRoute>
               }
             >
-              <Route index element={<SuperadminDashboard />} />
-              <Route path="volunteers" element={<VolunteersManagement />} />
-              <Route path="verifications" element={<VerificationManagement />} />
+              <Route index element={<ConditionalDashboard />} />
+              {/* Superadmin only routes */}
+              <Route 
+                path="volunteers" 
+                element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <VolunteersManagement />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="verifications" 
+                element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <VerificationManagement />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="ngos" 
+                element={
+                  <ProtectedRoute allowedRoles={['superadmin']}>
+                    <NGOManagement />
+                  </ProtectedRoute>
+                } 
+              />
+              {/* Shared routes */}
               <Route path="rescues" element={<RescueCasesManagement />} />
-              <Route path="dogs" element={<RescueCasesManagement />} />
-              <Route path="adoptions" element={<NGODashboard />} />
-              <Route path="team" element={<NGODashboard />} />
+              <Route path="dogs" element={<DogsManagement />} />
+              <Route path="adoptions" element={<AdoptionsManagement />} />
             </Route>
 
             {/* Volunteer Dashboard */}
@@ -120,6 +148,16 @@ const App = () => (
             >
               <Route index element={<AdopterDashboard />} />
             </Route>
+
+            {/* Profile Page - Accessible to all authenticated users */}
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute allowedRoles={['superadmin', 'ngo_admin', 'volunteer', 'veterinarian', 'adopter']}>
+                  <ProfilePage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />

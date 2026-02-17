@@ -36,6 +36,12 @@ export interface Dog {
   rescuedAt?: string;
   adoptedAt?: string;
   adopterId?: string;
+  fromReport?: {
+    reportId: string;
+    reportedBy: string;
+    reportedAt: string;
+    urgency: 'low' | 'medium' | 'high' | 'critical';
+  };
 }
 
 // Location Types
@@ -61,6 +67,7 @@ export interface RescueReport {
   dogId?: string;
   urgency: 'low' | 'medium' | 'high' | 'critical';
   notes?: string;
+  contactPhone?: string;
 }
 
 // Adoption Application Types
