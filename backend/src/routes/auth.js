@@ -7,7 +7,7 @@ import { pool } from '../db/pool.js';
 import { env } from '../config/env.js';
 import { HttpError } from '../utils/httpError.js';
 import { uploadBase64Image } from '../utils/cloudinary.js';
-import { sendVerificationPendingEmail } from '../utils/email.js';
+import { sendVerificationPendingEmail, sendPasswordResetOTPEmail } from '../utils/email.js';
 
 export const authRouter = Router();
 
@@ -172,6 +172,140 @@ authRouter.post('/auth/login', async (req, res, next) => {
     };
 
     res.json({ token: signToken(user), user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Forgot password - Send OTP
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+authRouter.post('/auth/forgot-password', async (req, res, next) => {
+  try {
+    const data = forgotPasswordSchema.parse(req.body);
+    const email = data.email.toLowerCase();
+
+    // Find user by email
+    const [rows] = await pool.query(
+      `SELECT id, email, name, role FROM users WHERE email = ? LIMIT 1`,
+      [email]
+    );
+
+    const user = rows?.[0];
+    
+    // Don't reveal if user exists or not (security best practice)
+    // But also don't allow superadmin to reset password
+    if (user && user.role === 'superadmin') {
+      throw new HttpError(403, 'Password reset is not available for superadmin accounts. Please contact system administrator.');
+    }
+
+    // If user exists and is not superadmin, generate and send OTP
+    if (user) {
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpId = uuidv4();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+
+      // Invalidate any existing unused OTPs for this user
+      await pool.query(
+        `UPDATE password_reset_otps SET used = 1 WHERE user_id = ? AND used = 0`,
+        [user.id]
+      );
+
+      // Store OTP
+      await pool.query(
+        `INSERT INTO password_reset_otps (id, user_id, email, otp, expires_at) VALUES (?, ?, ?, ?, ?)`,
+        [otpId, user.id, email, otp, expiresAt]
+      );
+
+      // Send OTP email
+      try {
+        await sendPasswordResetOTPEmail(email, user.name, otp);
+      } catch (emailError) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to send password reset OTP email:', emailError);
+        // Don't fail the request, but log the error
+      }
+    }
+
+    // Always return success (don't reveal if user exists)
+    res.json({
+      message: 'If an account with that email exists, a password reset OTP has been sent.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Reset password - Verify OTP and update password
+const resetPasswordSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().length(6, 'OTP must be 6 digits'),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+authRouter.post('/auth/reset-password', async (req, res, next) => {
+  try {
+    const data = resetPasswordSchema.parse(req.body);
+    const email = data.email.toLowerCase();
+
+    // Find user
+    const [userRows] = await pool.query(
+      `SELECT id, role FROM users WHERE email = ? LIMIT 1`,
+      [email]
+    );
+
+    const user = userRows?.[0];
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+
+    if (user.role === 'superadmin') {
+      throw new HttpError(403, 'Password reset is not available for superadmin accounts.');
+    }
+
+    // Find valid OTP
+    const [otpRows] = await pool.query(
+      `SELECT id, user_id, otp, expires_at, used 
+       FROM password_reset_otps 
+       WHERE email = ? AND used = 0 AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [email]
+    );
+
+    const otpRecord = otpRows?.[0];
+    if (!otpRecord) {
+      throw new HttpError(400, 'Invalid or expired OTP. Please request a new one.');
+    }
+
+    if (otpRecord.user_id !== user.id) {
+      throw new HttpError(400, 'OTP does not match this user.');
+    }
+
+    if (otpRecord.otp !== data.otp) {
+      throw new HttpError(400, 'Invalid OTP code.');
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(data.newPassword, 10);
+
+    // Update password
+    await pool.query(
+      `UPDATE users SET password_hash = ? WHERE id = ?`,
+      [passwordHash, user.id]
+    );
+
+    // Mark OTP as used
+    await pool.query(
+      `UPDATE password_reset_otps SET used = 1 WHERE id = ?`,
+      [otpRecord.id]
+    );
+
+    res.json({
+      message: 'Password has been reset successfully. You can now login with your new password.',
+    });
   } catch (err) {
     next(err);
   }

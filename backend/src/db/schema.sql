@@ -92,3 +92,18 @@ CREATE TABLE IF NOT EXISTS rescue_report_photos (
   INDEX idx_report_photos_report (report_id)
 );
 
+-- Password reset OTPs table
+CREATE TABLE IF NOT EXISTS password_reset_otps (
+  id CHAR(36) PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  otp VARCHAR(6) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_password_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_otp_email (email),
+  INDEX idx_otp_expires (expires_at),
+  INDEX idx_otp_used (used)
+);
+

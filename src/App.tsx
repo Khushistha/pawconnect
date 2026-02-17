@@ -19,6 +19,8 @@ import AboutPage from "@/pages/AboutPage";
 // Auth Pages
 import LoginPage from "@/pages/auth/LoginPage";
 import RegisterPage from "@/pages/auth/RegisterPage";
+import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage";
+import ResetPasswordPage from "@/pages/auth/ResetPasswordPage";
 
 // Dashboard Pages
 import SuperadminDashboard from "@/pages/dashboard/SuperadminDashboard";
@@ -59,6 +61,8 @@ const App = () => (
             {/* Auth Routes (No Layout) */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Superadmin & NGO Admin Dashboard */}
             <Route
