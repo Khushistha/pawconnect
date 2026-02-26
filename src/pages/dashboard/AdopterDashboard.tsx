@@ -6,6 +6,14 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import QRCode from 'react-qr-code';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import type { AdoptionApplication, Dog } from '@/types';
@@ -18,6 +26,8 @@ export default function AdopterDashboard() {
   const [apps, setApps] = useState<AdoptionApplication[]>([]);
   const [dogsById, setDogsById] = useState<Record<string, Dog>>({});
   const [loading, setLoading] = useState(true);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [selectedApp, setSelectedApp] = useState<AdoptionApplication | null>(null);
 
   useEffect(() => {
     const fetchMyApps = async () => {
@@ -75,6 +85,129 @@ export default function AdopterDashboard() {
 
   const approvedApplications = myApplications.filter(a => a.status === 'approved');
   const pendingApplications = myApplications.filter(a => a.status === 'pending' || a.status === 'under_review');
+
+  const selectedDog = selectedApp ? dogsById[selectedApp.dogId] : undefined;
+
+  const qrPayload = useMemo(() => {
+    if (!selectedApp || !selectedDog || !user) return null;
+    return {
+      type: 'adoption_pass',
+      applicationId: selectedApp.id,
+      approvedAt: selectedApp.reviewedAt,
+      dog: {
+        id: selectedDog.id,
+        name: selectedDog.name,
+        breed: selectedDog.breed,
+      },
+      adopter: {
+        id: selectedApp.applicantId,
+        name: selectedApp.applicantName,
+        email: selectedApp.applicantEmail,
+        phone: selectedApp.applicantPhone,
+      },
+      ngo: selectedApp.ngoId
+        ? {
+            id: selectedApp.ngoId,
+            name: selectedApp.ngoName,
+            email: selectedApp.ngoEmail,
+          }
+        : undefined,
+    };
+  }, [selectedApp, selectedDog, user]);
+
+  const handleDownloadDetails = () => {
+    if (!qrPayload || !selectedApp || !selectedDog) return;
+
+    const approvedDate = selectedApp.reviewedAt
+      ? new Date(selectedApp.reviewedAt).toLocaleString()
+      : '';
+    const submittedDate = new Date(selectedApp.submittedAt).toLocaleString();
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Adoption Confirmation - ${selectedDog.name}</title>
+    <style>
+      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 32px; color: #111827; }
+      h1 { font-size: 24px; margin-bottom: 4px; }
+      h2 { font-size: 18px; margin-top: 24px; margin-bottom: 8px; }
+      .muted { color: #6b7280; font-size: 12px; }
+      .section { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 20px; margin-top: 16px; }
+      .row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+      .label { font-weight: 500; color: #4b5563; }
+      .value { color: #111827; text-align: right; }
+      .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: #ecfdf3; color: #166534; font-weight: 500; }
+      pre { background: #f3f4f6; padding: 12px; border-radius: 8px; font-size: 11px; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>Adoption Confirmation</h1>
+    <p class="muted">This document summarizes the confirmed adoption so the NGO can verify adopter and dog details.</p>
+
+    <div class="section">
+      <div class="row">
+        <div class="label">Document Type</div>
+        <div class="value">Adoption Confirmation</div>
+      </div>
+      <div class="row">
+        <div class="label">Application ID</div>
+        <div class="value">${selectedApp.id}</div>
+      </div>
+      <div class="row">
+        <div class="label">Status</div>
+        <div class="value"><span class="badge">Approved</span></div>
+      </div>
+      <div class="row">
+        <div class="label">Applied On</div>
+        <div class="value">${submittedDate}</div>
+      </div>
+      <div class="row">
+        <div class="label">Approved On</div>
+        <div class="value">${approvedDate}</div>
+      </div>
+    </div>
+
+    <h2>Dog Details</h2>
+    <div class="section">
+      <div class="row"><div class="label">Name</div><div class="value">${selectedDog.name}</div></div>
+      <div class="row"><div class="label">Breed</div><div class="value">${selectedDog.breed || 'Mixed Breed'}</div></div>
+      <div class="row"><div class="label">Estimated Age</div><div class="value">${selectedDog.estimatedAge}</div></div>
+      <div class="row"><div class="label">Gender</div><div class="value">${selectedDog.gender}</div></div>
+      <div class="row"><div class="label">Size</div><div class="value">${selectedDog.size}</div></div>
+    </div>
+
+    <h2>Adopter Details</h2>
+    <div class="section">
+      <div class="row"><div class="label">Name</div><div class="value">${selectedApp.applicantName}</div></div>
+      <div class="row"><div class="label">Email</div><div class="value">${selectedApp.applicantEmail}</div></div>
+      <div class="row"><div class="label">Phone</div><div class="value">${selectedApp.applicantPhone}</div></div>
+      <div class="row"><div class="label">Home Type</div><div class="value">${selectedApp.homeType}</div></div>
+      <div class="row"><div class="label">Has Yard</div><div class="value">${selectedApp.hasYard ? 'Yes' : 'No'}</div></div>
+      <div class="row"><div class="label">Other Pets</div><div class="value">${selectedApp.otherPets || '-'}</div></div>
+    </div>
+
+    <h2>NGO Details</h2>
+    <div class="section">
+      <div class="row"><div class="label">Name</div><div class="value">${selectedApp.ngoName || 'N/A'}</div></div>
+      <div class="row"><div class="label">Email</div><div class="value">${selectedApp.ngoEmail || 'N/A'}</div></div>
+    </div>
+
+    <h2>QR Payload (for verification tools)</h2>
+    <pre>${JSON.stringify(qrPayload, null, 2)}</pre>
+  </body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `adoption-${selectedDog.name.replace(/\\s+/g, '-').toLowerCase()}-${selectedApp.id}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
@@ -135,8 +268,14 @@ export default function AdopterDashboard() {
                       Approved on {new Date(app.reviewedAt!).toLocaleDateString()}
                     </p>
                   </div>
-                  <Button className="btn-hero-primary">
-                    Schedule Pickup
+                  <Button
+                    className="btn-hero-primary"
+                    onClick={() => {
+                      setSelectedApp(app);
+                      setQrOpen(true);
+                    }}
+                  >
+                    Show Pickup QR
                   </Button>
                 </div>
               );
@@ -242,6 +381,56 @@ export default function AdopterDashboard() {
           </ul>
         </CardContent>
       </Card>
+
+      {/* QR Code Dialog for approved applications */}
+      <Dialog open={qrOpen} onOpenChange={setQrOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Adoption Pickup QR</DialogTitle>
+            <DialogDescription>
+              Show this QR code to the NGO when you pick up your dog. It contains your
+              adoption details so they can verify and hand over the dog safely.
+            </DialogDescription>
+          </DialogHeader>
+
+          {qrPayload && selectedApp && selectedDog ? (
+            <div className="space-y-4">
+              <div className="flex flex-col items-center gap-2">
+                <QRCode
+                  value={JSON.stringify(qrPayload)}
+                  size={256}
+                  style={{ width: '100%', height: 'auto' }}
+                />
+              </div>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>
+                  <span className="font-medium">Dog:</span> {selectedDog.name} (
+                  {selectedDog.breed || 'Mixed Breed'})
+                </p>
+                <p>
+                  <span className="font-medium">Adopter:</span> {selectedApp.applicantName} (
+                  {selectedApp.applicantEmail})
+                </p>
+                {selectedApp.ngoName && (
+                  <p>
+                    <span className="font-medium">NGO:</span> {selectedApp.ngoName}
+                  </p>
+                )}
+              </div>
+              <div className="pt-2 flex justify-end">
+                <Button variant="outline" size="sm" onClick={handleDownloadDetails}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Download Details (HTML)
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 flex items-center justify-center">
+              <Spinner size="lg" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

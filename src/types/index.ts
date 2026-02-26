@@ -16,6 +16,7 @@ export interface User {
 export type DogStatus = 'reported' | 'in_progress' | 'treated' | 'adoptable' | 'adopted';
 export type DogSize = 'small' | 'medium' | 'large';
 export type DogGender = 'male' | 'female' | 'unknown';
+export type TreatmentStatus = 'pending' | 'in_progress' | 'completed';
 
 export interface Dog {
   id: string;
@@ -36,6 +37,8 @@ export interface Dog {
   rescuedAt?: string;
   adoptedAt?: string;
   adopterId?: string;
+  vetId?: string;
+  treatmentStatus?: TreatmentStatus;
   fromReport?: {
     reportId: string;
     reportedBy: string;
@@ -76,10 +79,15 @@ export type ApplicationStatus = 'pending' | 'under_review' | 'approved' | 'rejec
 export interface AdoptionApplication {
   id: string;
   dogId: string;
+  // Applicant
   applicantId: string;
   applicantName: string;
   applicantEmail: string;
   applicantPhone: string;
+  // Owning NGO (may be undefined if not linked)
+  ngoId?: string;
+  ngoName?: string;
+  ngoEmail?: string;
   status: ApplicationStatus;
   homeType: string;
   hasYard: boolean;

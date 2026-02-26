@@ -174,3 +174,42 @@ profileRouter.put('/profile', requireAuth, async (req, res, next) => {
     next(err);
   }
 });
+
+// GET /api/users/:id - Get user details by ID (for NGO admins/superadmins to view adopter info)
+profileRouter.get('/users/:id', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userRole = req.user?.role;
+
+    // Only NGO admins and superadmins can view other users' details
+    if (userRole !== 'ngo_admin' && userRole !== 'superadmin') {
+      throw new HttpError(403, 'Only NGO admins and superadmins can view user details');
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, email, name, role, avatar, phone, organization, created_at
+       FROM users WHERE id = ? LIMIT 1`,
+      [id]
+    );
+
+    const user = rows?.[0];
+    if (!user) {
+      throw new HttpError(404, 'User not found');
+    }
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        avatar: user.avatar ?? undefined,
+        phone: user.phone ?? undefined,
+        organization: user.organization ?? undefined,
+        createdAt: new Date(user.created_at).toISOString(),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});

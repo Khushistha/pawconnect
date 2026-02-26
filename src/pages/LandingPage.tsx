@@ -121,6 +121,12 @@ export default function LandingPage() {
                 Report a Stray
               </Link>
             </Button>
+            <Button asChild size="lg" variant="outline" className="text-lg px-8 py-6 rounded-xl bg-card/50 backdrop-blur-sm">
+              <Link to="/donate">
+                <Heart className="w-5 h-5 mr-2" />
+                Donate
+              </Link>
+            </Button>
           </div>
         </div>
 
@@ -245,6 +251,12 @@ export default function LandingPage() {
               <Link to="/register">
                 Get Started
                 <ChevronRight className="w-5 h-5 ml-2" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="text-lg px-8 py-6 rounded-xl border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+              <Link to="/donate">
+                <Heart className="w-5 h-5 mr-2" />
+                Donate
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="text-lg px-8 py-6 rounded-xl border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">

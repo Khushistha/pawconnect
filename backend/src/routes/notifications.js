@@ -5,10 +5,12 @@ import { HttpError } from '../utils/httpError.js';
 
 export const notificationsRouter = Router();
 
+// All notification routes require authentication.
+// Router is mounted under /api/notifications so these paths are relative.
 notificationsRouter.use(requireAuth);
 
 // GET /api/notifications - list recent notifications for current user
-notificationsRouter.get('/notifications', async (req, res, next) => {
+notificationsRouter.get('/', async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
     if (!userId) throw new HttpError(401, 'Unauthorized');
@@ -40,7 +42,7 @@ notificationsRouter.get('/notifications', async (req, res, next) => {
 });
 
 // PATCH /api/notifications/:id/read - mark notification as read
-notificationsRouter.patch('/notifications/:id/read', async (req, res, next) => {
+notificationsRouter.patch('/:id/read', async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
     if (!userId) throw new HttpError(401, 'Unauthorized');

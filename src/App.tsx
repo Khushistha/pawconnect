@@ -15,6 +15,7 @@ import AdoptionGallery from "@/pages/AdoptionGallery";
 import DogProfilePage from "@/pages/DogProfilePage";
 import ReportDogPage from "@/pages/ReportDogPage";
 import AboutPage from "@/pages/AboutPage";
+import DonationPage from "@/pages/DonationPage";
 
 // Auth Pages
 import LoginPage from "@/pages/auth/LoginPage";
@@ -27,6 +28,8 @@ import SuperadminDashboard from "@/pages/dashboard/SuperadminDashboard";
 import NGODashboard from "@/pages/dashboard/NGODashboard";
 import VolunteerDashboard from "@/pages/dashboard/VolunteerDashboard";
 import VetDashboard from "@/pages/dashboard/VetDashboard";
+import VetPatientsPage from "@/pages/dashboard/VetPatientsPage";
+import VetMedicalRecordsPage from "@/pages/dashboard/VetMedicalRecordsPage";
 import AdopterDashboard from "@/pages/dashboard/AdopterDashboard";
 import VolunteersManagement from "@/pages/dashboard/VolunteersManagement";
 import VerificationManagement from "@/pages/dashboard/VerificationManagement";
@@ -61,6 +64,8 @@ const App = () => (
               <Route path="/dogs/:id" element={<DogProfilePage />} />
               <Route path="/report" element={<ReportDogPage />} />
               <Route path="/about" element={<AboutPage />} />
+              <Route path="/donate" element={<DonationPage />} />
+              <Route path="/donate/success" element={<DonationPage />} />
             </Route>
 
             {/* Auth Routes (No Layout) */}
@@ -133,8 +138,8 @@ const App = () => (
               }
             >
               <Route index element={<VetDashboard />} />
-              <Route path="patients" element={<VetDashboard />} />
-              <Route path="records" element={<VetDashboard />} />
+              <Route path="patients" element={<VetPatientsPage />} />
+              <Route path="records" element={<VetMedicalRecordsPage />} />
             </Route>
 
             {/* Adopter Dashboard */}

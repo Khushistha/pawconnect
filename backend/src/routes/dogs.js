@@ -5,6 +5,8 @@ import { pool } from '../db/pool.js';
 import { HttpError } from '../utils/httpError.js';
 import { requireAuth } from '../middleware/auth.js';
 import { uploadBase64Image } from '../utils/cloudinary.js';
+import { sendEmail } from '../utils/email.js';
+import { env } from '../config/env.js';
 
 export const dogsRouter = Router();
 
@@ -36,6 +38,8 @@ function mapDogRow(row, photoUrls = [], reportInfo = null) {
     rescuedAt: row.rescued_at ? new Date(row.rescued_at).toISOString() : undefined,
     adoptedAt: row.adopted_at ? new Date(row.adopted_at).toISOString() : undefined,
     adopterId: row.adopter_id ?? undefined,
+    vetId: row.vet_id ?? undefined,
+    treatmentStatus: row.treatment_status ?? undefined,
     fromReport: reportInfo ? {
       reportId: reportInfo.id,
       reportedBy: reportInfo.reported_by,
@@ -59,7 +63,7 @@ dogsRouter.get('/dogs', async (req, res, next) => {
       // Special case: adoptable should also include dogs whose linked rescue report is completed.
       // This covers legacy rows where the dog.status wasn't updated when report status changed.
       if (s === 'adoptable') {
-        where.push(`(d.status = ? OR r.status = 'completed')`);
+        where.push(`(d.status = ? OR (d.status != 'adopted' AND r.status = 'completed'))`);
         params.push(s);
       } else {
         where.push('d.status = ?');
@@ -116,11 +120,131 @@ dogsRouter.get('/dogs', async (req, res, next) => {
         // If caller asked for adoptable dogs, treat "completed report" as adoptable in the API response.
         // This keeps UI consistent even for older rows where dog.status wasn't updated.
         const effectiveRow =
-          statusQuery === 'adoptable' && r.report_status === 'completed'
+          statusQuery === 'adoptable' &&
+          r.report_status === 'completed' &&
+          r.status !== 'adopted'
             ? { ...r, status: 'adoptable' }
             : r;
 
         return mapDogRow(effectiveRow, photosByDog.get(r.id) ?? [], reportInfo);
+      }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/dogs/vet-stats - Get statistics for veterinarian dashboard
+// MUST be defined BEFORE /dogs/:id to avoid route conflicts
+dogsRouter.get('/dogs/vet-stats', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'veterinarian' && req.user?.role !== 'superadmin') {
+      throw new HttpError(403, 'Only veterinarians can view dashboard statistics');
+    }
+    const vetId = req.user?.sub || req.user?.id;
+    if (!vetId) throw new HttpError(401, 'Unauthorized');
+
+    // Get all assigned dogs (not adopted)
+    const [statsRows] = await pool.query(
+      `SELECT 
+        COUNT(*) as total_patients,
+        COUNT(CASE WHEN DATE(d.reported_at) = CURDATE() THEN 1 END) as patients_today,
+        COUNT(CASE WHEN d.vaccinated = 1 THEN 1 END) as vaccinated_count,
+        COUNT(CASE WHEN d.sterilized = 1 THEN 1 END) as sterilized_count,
+        COUNT(CASE WHEN d.treatment_status = 'pending' THEN 1 END) as pending_treatment,
+        COUNT(CASE WHEN d.treatment_status = 'in_progress' THEN 1 END) as in_progress_treatment,
+        COUNT(CASE WHEN d.treatment_status = 'completed' THEN 1 END) as completed_treatment
+       FROM dogs d
+       WHERE d.vet_id = ? AND d.status != 'adopted'`,
+      [vetId]
+    );
+
+    const stats = statsRows[0];
+
+    res.json({
+      stats: {
+        totalPatients: Number(stats.total_patients) || 0,
+        patientsToday: Number(stats.patients_today) || 0,
+        vaccinated: Number(stats.vaccinated_count) || 0,
+        sterilized: Number(stats.sterilized_count) || 0,
+        pendingTreatment: Number(stats.pending_treatment) || 0,
+        inProgressTreatment: Number(stats.in_progress_treatment) || 0,
+        completedTreatment: Number(stats.completed_treatment) || 0,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/dogs/for-vet - Dogs assigned to logged-in veterinarian
+// MUST be defined BEFORE /dogs/:id to avoid route conflicts
+dogsRouter.get('/dogs/for-vet', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'veterinarian' && req.user?.role !== 'superadmin') {
+      throw new HttpError(403, 'Only veterinarians can view assigned patients');
+    }
+    const vetId = req.user?.sub || req.user?.id;
+    if (!vetId) throw new HttpError(401, 'Unauthorized');
+
+    // Debug logging
+    // eslint-disable-next-line no-console
+    console.log('[GET /api/dogs/for-vet] Vet ID from token:', vetId, 'User:', req.user);
+
+    // Check if there are any dogs assigned to this vet (for debugging)
+    const [debugRows] = await pool.query(
+      `SELECT id, name, vet_id FROM dogs WHERE vet_id = ? LIMIT 5`,
+      [vetId]
+    );
+    // eslint-disable-next-line no-console
+    console.log('[GET /api/dogs/for-vet] Dogs with vet_id matching token:', debugRows);
+
+    const [dogRows] = await pool.query(
+      `SELECT d.*,
+              r.id as report_id,
+              r.status as report_status,
+              r.reported_by,
+              r.reported_at as report_reported_at,
+              r.urgency
+       FROM dogs d
+       LEFT JOIN rescue_reports r ON r.dog_id = d.id
+       WHERE d.vet_id = ?
+         AND d.status != 'adopted'
+       ORDER BY d.reported_at DESC
+       LIMIT 200`,
+      [vetId]
+    );
+
+    // eslint-disable-next-line no-console
+    console.log('[GET /api/dogs/for-vet] Found', dogRows.length, 'dogs for vet');
+
+    const dogIds = dogRows.map((r) => r.id);
+    let photosByDog = new Map();
+    if (dogIds.length) {
+      const [photoRows] = await pool.query(
+        `SELECT dog_id, url FROM dog_photos WHERE dog_id IN (${dogIds.map(() => '?').join(',')})
+         ORDER BY sort_order ASC, id ASC`,
+        dogIds
+      );
+      photosByDog = photoRows.reduce((m, pr) => {
+        const arr = m.get(pr.dog_id) ?? [];
+        arr.push(pr.url);
+        m.set(pr.dog_id, arr);
+        return m;
+      }, new Map());
+    }
+
+    res.json({
+      items: dogRows.map((r) => {
+        const reportInfo = r.report_id
+          ? {
+              id: r.report_id,
+              reported_by: r.reported_by,
+              reported_at: r.report_reported_at,
+              urgency: r.urgency,
+            }
+          : null;
+        return mapDogRow(r, photosByDog.get(r.id) ?? [], reportInfo);
       }),
     });
   } catch (err) {
@@ -190,7 +314,20 @@ const createDogSchema = z.object({
   photos: z.array(z.string()).max(10, 'Maximum 10 photos allowed').optional(),
 });
 
-const updateDogSchema = createDogSchema.partial();
+const updateDogSchema = createDogSchema
+  .extend({
+    vetId: z.string().uuid().optional(),
+    treatmentStatus: z.enum(['pending', 'in_progress', 'completed']).optional(),
+  })
+  .partial();
+
+const treatmentStatusSchema = z.object({
+  treatmentStatus: z.enum(['pending', 'in_progress', 'completed']),
+});
+
+const assignVetSchema = z.object({
+  vetId: z.string().uuid().nullable(),
+});
 
 // POST /api/dogs - Create a new rescue case (dog)
 dogsRouter.post('/dogs', requireAuth, requireNGOAdmin, async (req, res, next) => {
@@ -338,6 +475,14 @@ dogsRouter.put('/dogs/:id', requireAuth, requireNGOAdmin, async (req, res, next)
       updates.push('status = ?');
       values.push(data.status);
     }
+    if (data.vetId !== undefined) {
+      updates.push('vet_id = ?');
+      values.push(data.vetId || null);
+    }
+    if (data.treatmentStatus !== undefined) {
+      updates.push('treatment_status = ?');
+      values.push(data.treatmentStatus);
+    }
     if (data.description !== undefined) {
       updates.push('description = ?');
       values.push(data.description);
@@ -429,6 +574,214 @@ dogsRouter.put('/dogs/:id', requireAuth, requireNGOAdmin, async (req, res, next)
       reported_at: row.report_reported_at,
       urgency: row.urgency,
     } : null;
+
+    res.json({ item: mapDogRow(row, photoRows.map((p) => p.url), reportInfo) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/dogs/:id/assign-vet - Assign or unassign a veterinarian (NGO admin)
+dogsRouter.patch('/dogs/:id/assign-vet', requireAuth, requireNGOAdmin, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { vetId } = assignVetSchema.parse(req.body);
+
+    // Ensure dog exists
+    const [existingDogs] = await pool.query(`SELECT id FROM dogs WHERE id = ? LIMIT 1`, [id]);
+    if (!existingDogs.length) {
+      throw new HttpError(404, 'Dog not found');
+    }
+
+    let vetRow = null;
+    if (vetId) {
+      const [rows] = await pool.query(
+        `SELECT id, name, email 
+         FROM users 
+         WHERE id = ? 
+           AND role = 'veterinarian' 
+           AND verification_status = 'approved'
+         LIMIT 1`,
+        [vetId]
+      );
+      vetRow = rows?.[0];
+      if (!vetRow) {
+        throw new HttpError(404, 'Veterinarian not found or not approved');
+      }
+    }
+
+    // Get dog name for notification
+    const [dogRows] = await pool.query(`SELECT name FROM dogs WHERE id = ? LIMIT 1`, [id]);
+    const dogName = dogRows[0]?.name || 'a dog';
+
+    await pool.query(
+      `UPDATE dogs 
+       SET vet_id = ?, 
+           treatment_status = COALESCE(treatment_status, 'pending')
+       WHERE id = ?`,
+      [vetId || null, id]
+    );
+
+    // Send notification and email to vet if assigned
+    if (vetId && vetRow) {
+      const notificationId = uuidv4();
+      await pool.query(
+        `INSERT INTO notifications (id, user_id, title, message, type, link)
+         VALUES (?, ?, ?, ?, 'info', ?)`,
+        [
+          notificationId,
+          vetId,
+          'New Patient Assigned',
+          `You have been assigned to treat ${dogName}. Please review the patient details and update the treatment status.`,
+          `/dashboard/vet`,
+        ]
+      );
+
+      // Send email notification
+      try {
+        const emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+              .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+              .button { display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; margin-top: 20px; }
+              .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>🐾 PawConnect Nepal</h1>
+              </div>
+              <div class="content">
+                <h2>New Patient Assigned</h2>
+                <p>Hello ${vetRow.name},</p>
+                <p>You have been assigned to treat <strong>${dogName}</strong>.</p>
+                <p>Please log in to your dashboard to review the patient details and update the treatment status.</p>
+                <a href="${env.FRONTEND_ORIGIN}/dashboard/vet" class="button">View Dashboard</a>
+                <p>Thank you for your continued support in helping rescue and care for dogs in need.</p>
+                <p>Best regards,<br>The PawConnect Nepal Team</p>
+              </div>
+              <div class="footer">
+                <p>© 2024 PawConnect Nepal. All rights reserved.</p>
+                <p>Nayabazar, Pokhara, Nepal</p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `;
+        await sendEmail(
+          vetRow.email,
+          `New Patient Assigned - ${dogName} - PawConnect Nepal`,
+          emailHtml
+        );
+      } catch (emailError) {
+        // Log error but don't fail the assignment
+        // eslint-disable-next-line no-console
+        console.error('Failed to send assignment email:', emailError);
+      }
+    }
+
+    // Return updated dog
+    const [rows] = await pool.query(
+      `SELECT d.*, r.id as report_id, r.reported_by, r.reported_at as report_reported_at, r.urgency
+       FROM dogs d
+       LEFT JOIN rescue_reports r ON r.dog_id = d.id
+       WHERE d.id = ? LIMIT 1`,
+      [id]
+    );
+    const row = rows?.[0];
+    if (!row) throw new HttpError(500, 'Failed to fetch updated dog');
+
+    const [photoRows] = await pool.query(
+      `SELECT url FROM dog_photos WHERE dog_id = ? ORDER BY sort_order ASC, id ASC`,
+      [id]
+    );
+
+    const reportInfo = row.report_id
+      ? {
+          id: row.report_id,
+          reported_by: row.reported_by,
+          reported_at: row.report_reported_at,
+          urgency: row.urgency,
+        }
+      : null;
+
+    res.json({ item: mapDogRow(row, photoRows.map((p) => p.url), reportInfo) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/dogs/:id/treatment - Update treatment status (vet)
+dogsRouter.patch('/dogs/:id/treatment', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'veterinarian' && req.user?.role !== 'superadmin') {
+      throw new HttpError(403, 'Only veterinarians can update treatment status');
+    }
+    const vetId = req.user?.sub || req.user?.id;
+    if (!vetId) throw new HttpError(401, 'Unauthorized');
+
+    const { id } = req.params;
+    const { treatmentStatus } = treatmentStatusSchema.parse(req.body);
+
+    // Load dog to ensure assignment and current status
+    const [rowsExisting] = await pool.query(
+      `SELECT id, vet_id, status 
+       FROM dogs 
+       WHERE id = ? 
+       LIMIT 1`,
+      [id]
+    );
+    const dog = rowsExisting?.[0];
+    if (!dog) throw new HttpError(404, 'Dog not found');
+
+    if (req.user?.role === 'veterinarian' && dog.vet_id !== vetId) {
+      throw new HttpError(403, 'You can only update treatment for dogs assigned to you');
+    }
+
+    let newStatus = dog.status;
+    if (dog.status !== 'adopted' && dog.status !== 'adoptable') {
+      if (treatmentStatus === 'pending') newStatus = 'reported';
+      else if (treatmentStatus === 'in_progress') newStatus = 'in_progress';
+      else if (treatmentStatus === 'completed') newStatus = 'treated';
+    }
+
+    await pool.query(
+      `UPDATE dogs 
+       SET treatment_status = ?, status = ? 
+       WHERE id = ?`,
+      [treatmentStatus, newStatus, id]
+    );
+
+    const [rows] = await pool.query(
+      `SELECT d.*, r.id as report_id, r.reported_by, r.reported_at as report_reported_at, r.urgency
+       FROM dogs d
+       LEFT JOIN rescue_reports r ON r.dog_id = d.id
+       WHERE d.id = ? LIMIT 1`,
+      [id]
+    );
+    const row = rows?.[0];
+    if (!row) throw new HttpError(500, 'Failed to fetch updated dog');
+
+    const [photoRows] = await pool.query(
+      `SELECT url FROM dog_photos WHERE dog_id = ? ORDER BY sort_order ASC, id ASC`,
+      [id]
+    );
+
+    const reportInfo = row.report_id
+      ? {
+          id: row.report_id,
+          reported_by: row.reported_by,
+          reported_at: row.report_reported_at,
+          urgency: row.urgency,
+        }
+      : null;
 
     res.json({ item: mapDogRow(row, photoRows.map((p) => p.url), reportInfo) });
   } catch (err) {

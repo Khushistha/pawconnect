@@ -35,6 +35,69 @@ export async function migrate({ closePool = false } = {}) {
     await pool.query(`CREATE INDEX idx_dogs_created_by ON dogs(created_by)`);
   }
 
+  // dogs.vet_id + treatment_status - used to assign patients to veterinarians
+  if (!(await columnExists('dogs', 'vet_id'))) {
+    await pool.query(
+      `ALTER TABLE dogs
+         ADD COLUMN vet_id CHAR(36) NULL AFTER adopter_id,
+         ADD COLUMN treatment_status ENUM('pending','in_progress','completed') NOT NULL DEFAULT 'pending' AFTER vet_id`
+    );
+    await pool.query(`CREATE INDEX idx_dogs_vet ON dogs(vet_id)`);
+  }
+
+  // medical_records table - created by veterinarians
+  async function tableExists(tableName) {
+    const [rows] = await pool.query(
+      `SELECT COUNT(*) as cnt
+       FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = ?`,
+      [tableName]
+    );
+    return Number(rows?.[0]?.cnt ?? 0) > 0;
+  }
+
+  if (!(await tableExists('medical_records'))) {
+    await pool.query(`
+      CREATE TABLE medical_records (
+        id CHAR(36) PRIMARY KEY,
+        dog_id CHAR(36) NOT NULL,
+        vet_id CHAR(36) NOT NULL,
+        record_type ENUM('vaccination','sterilization','treatment','checkup') NOT NULL,
+        description TEXT NOT NULL,
+        medications TEXT NULL,
+        next_follow_up DATETIME NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_medical_records_dog FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE CASCADE,
+        CONSTRAINT fk_medical_records_vet FOREIGN KEY (vet_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_medical_records_dog (dog_id),
+        INDEX idx_medical_records_vet (vet_id),
+        INDEX idx_medical_records_created (created_at)
+      )
+    `);
+  }
+
+  // donations table - for Stripe payment tracking
+  if (!(await tableExists('donations'))) {
+    await pool.query(`
+      CREATE TABLE donations (
+        id CHAR(36) PRIMARY KEY,
+        amount DECIMAL(10, 2) NOT NULL,
+        currency VARCHAR(3) NOT NULL DEFAULT 'usd',
+        donor_name VARCHAR(120) NULL,
+        donor_email VARCHAR(255) NULL,
+        message TEXT NULL,
+        stripe_session_id VARCHAR(255) NULL,
+        stripe_payment_intent_id VARCHAR(255) NULL,
+        status ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        paid_at DATETIME NULL,
+        INDEX idx_donations_status (status),
+        INDEX idx_donations_created (created_at)
+      )
+    `);
+  }
+
   // Seed superadmin if configured and not present
   if (env.SUPERADMIN_EMAIL && env.SUPERADMIN_PASSWORD) {
     const email = env.SUPERADMIN_EMAIL.toLowerCase();

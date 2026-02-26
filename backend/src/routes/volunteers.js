@@ -8,10 +8,10 @@ import { HttpError } from '../utils/httpError.js';
 
 export const volunteersRouter = Router();
 
-// All routes require authentication
+// All volunteer routes require authentication
 volunteersRouter.use(requireAuth);
 
-// Only superadmin can access volunteer management
+// Only superadmin can access volunteer management (router is mounted under /api/volunteers)
 function requireSuperadmin(req, res, next) {
   const userRole = req.user?.role;
   // eslint-disable-next-line no-console
@@ -41,7 +41,7 @@ const updateVolunteerSchema = z.object({
 });
 
 // GET /api/volunteers - List all volunteers
-volunteersRouter.get('/volunteers', async (_req, res, next) => {
+volunteersRouter.get('/', async (_req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT id, email, name, role, phone, organization, created_at
@@ -67,7 +67,7 @@ volunteersRouter.get('/volunteers', async (_req, res, next) => {
 });
 
 // GET /api/volunteers/:id - Get single volunteer
-volunteersRouter.get('/volunteers/:id', async (req, res, next) => {
+volunteersRouter.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const [rows] = await pool.query(
@@ -99,7 +99,7 @@ volunteersRouter.get('/volunteers/:id', async (req, res, next) => {
 });
 
 // POST /api/volunteers - Create new volunteer
-volunteersRouter.post('/volunteers', async (req, res, next) => {
+volunteersRouter.post('/', async (req, res, next) => {
   try {
     const data = createVolunteerSchema.parse(req.body);
     const id = uuidv4();
@@ -142,7 +142,7 @@ volunteersRouter.post('/volunteers', async (req, res, next) => {
 });
 
 // PUT /api/volunteers/:id - Update volunteer
-volunteersRouter.put('/volunteers/:id', async (req, res, next) => {
+volunteersRouter.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const data = updateVolunteerSchema.parse(req.body);
@@ -218,7 +218,7 @@ volunteersRouter.put('/volunteers/:id', async (req, res, next) => {
 });
 
 // DELETE /api/volunteers/:id - Delete volunteer
-volunteersRouter.delete('/volunteers/:id', async (req, res, next) => {
+volunteersRouter.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
 

@@ -28,7 +28,8 @@ const applySchema = z.object({
   reason: z.string().min(5),
 });
 
-adoptionsRouter.post('/adoptions/apply', async (req, res, next) => {
+// Mounted under /api/adoptions → full path: POST /api/adoptions/apply
+adoptionsRouter.post('/apply', async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
     if (!userId) throw new HttpError(401, 'Unauthorized');
@@ -149,15 +150,21 @@ adoptionsRouter.post('/adoptions/apply', async (req, res, next) => {
 });
 
 // GET /api/adoptions/my - My applications
-adoptionsRouter.get('/adoptions/my', async (req, res, next) => {
+// Mounted under /api/adoptions → full path: GET /api/adoptions/my
+adoptionsRouter.get('/my', async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
     if (!userId) throw new HttpError(401, 'Unauthorized');
 
     const [rows] = await pool.query(
-      `SELECT a.*, u.name as applicant_name, u.email as applicant_email
+      `SELECT a.*,
+              u.name as applicant_name,
+              u.email as applicant_email,
+              ngo.name as ngo_name,
+              ngo.email as ngo_email
        FROM adoption_applications a
        JOIN users u ON u.id = a.applicant_id
+       LEFT JOIN users ngo ON ngo.id = a.ngo_id
        WHERE a.applicant_id = ?
        ORDER BY a.submitted_at DESC
        LIMIT 200`,
@@ -182,6 +189,9 @@ adoptionsRouter.get('/adoptions/my', async (req, res, next) => {
         reviewedAt: a.reviewed_at ? new Date(a.reviewed_at).toISOString() : undefined,
         reviewedBy: a.reviewed_by ?? undefined,
         notes: a.notes ?? undefined,
+        ngoId: a.ngo_id ?? undefined,
+        ngoName: a.ngo_name ?? undefined,
+        ngoEmail: a.ngo_email ?? undefined,
       })),
     });
   } catch (err) {
@@ -190,7 +200,8 @@ adoptionsRouter.get('/adoptions/my', async (req, res, next) => {
 });
 
 // GET /api/adoptions/ngo - Applications for NGO's dogs
-adoptionsRouter.get('/adoptions/ngo', requireNgoOrSuperadmin, async (req, res, next) => {
+// Mounted under /api/adoptions → full path: GET /api/adoptions/ngo
+adoptionsRouter.get('/ngo', requireNgoOrSuperadmin, async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
     if (!userId) throw new HttpError(401, 'Unauthorized');
@@ -243,7 +254,8 @@ const updateStatusSchema = z.object({
   notes: z.string().optional(),
 });
 
-adoptionsRouter.patch('/adoptions/:id/status', requireNgoOrSuperadmin, async (req, res, next) => {
+// Mounted under /api/adoptions → full path: PATCH /api/adoptions/:id/status
+adoptionsRouter.patch('/:id/status', requireNgoOrSuperadmin, async (req, res, next) => {
   try {
     const reviewerId = req.user?.sub || req.user?.id;
     if (!reviewerId) throw new HttpError(401, 'Unauthorized');

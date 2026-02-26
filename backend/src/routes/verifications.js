@@ -25,7 +25,7 @@ const rejectSchema = z.object({
 });
 
 // GET /api/verifications/pending - Get all pending verifications
-verificationsRouter.get('/verifications/pending', async (_req, res, next) => {
+verificationsRouter.get('/pending', async (_req, res, next) => {
   try {
     const [rows] = await pool.query(
       `SELECT id, email, name, role, phone, organization, 
@@ -55,7 +55,7 @@ verificationsRouter.get('/verifications/pending', async (_req, res, next) => {
 });
 
 // POST /api/verifications/:id/approve - Approve a user
-verificationsRouter.post('/verifications/:id/approve', async (req, res, next) => {
+verificationsRouter.post('/:id/approve', async (req, res, next) => {
   try {
     const { id } = req.params;
     const adminId = req.user?.sub;
@@ -108,7 +108,7 @@ verificationsRouter.post('/verifications/:id/approve', async (req, res, next) =>
 });
 
 // POST /api/verifications/:id/reject - Reject a user
-verificationsRouter.post('/verifications/:id/reject', async (req, res, next) => {
+verificationsRouter.post('/:id/reject', async (req, res, next) => {
   try {
     const { id } = req.params;
     const adminId = req.user?.sub;

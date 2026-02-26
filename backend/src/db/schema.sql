@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS dogs (
   rescued_at DATETIME NULL,
   adopted_at DATETIME NULL,
   adopter_id CHAR(36) NULL,
+  vet_id CHAR(36) NULL,
+  treatment_status ENUM('pending','in_progress','completed') NOT NULL DEFAULT 'pending',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_dogs_status (status),
   INDEX idx_dogs_district (location_district)
@@ -148,3 +150,55 @@ CREATE TABLE IF NOT EXISTS notifications (
   INDEX idx_notifications_created (created_at)
 );
 
+-- Medical records (created by veterinarians)
+CREATE TABLE IF NOT EXISTS medical_records (
+  id CHAR(36) PRIMARY KEY,
+  dog_id CHAR(36) NOT NULL,
+  vet_id CHAR(36) NOT NULL,
+  record_type ENUM('vaccination','sterilization','treatment','checkup') NOT NULL,
+  description TEXT NOT NULL,
+  medications TEXT NULL,
+  next_follow_up DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_medical_records_dog FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_medical_records_vet FOREIGN KEY (vet_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_medical_records_dog (dog_id),
+  INDEX idx_medical_records_vet (vet_id),
+  INDEX idx_medical_records_created (created_at)
+);
+
+
+-- Medical records (created by veterinarians)
+CREATE TABLE IF NOT EXISTS medical_records (
+  id CHAR(36) PRIMARY KEY,
+  dog_id CHAR(36) NOT NULL,
+  vet_id CHAR(36) NOT NULL,
+  record_type ENUM('vaccination','sterilization','treatment','checkup') NOT NULL,
+  description TEXT NOT NULL,
+  medications TEXT NULL,
+  next_follow_up DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_medical_records_dog FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_medical_records_vet FOREIGN KEY (vet_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_medical_records_dog (dog_id),
+  INDEX idx_medical_records_vet (vet_id),
+  INDEX idx_medical_records_created (created_at)
+);
+
+
+-- Donations table
+CREATE TABLE IF NOT EXISTS donations (
+  id CHAR(36) PRIMARY KEY,
+  amount DECIMAL(10, 2) NOT NULL,
+  currency VARCHAR(3) NOT NULL DEFAULT 'usd',
+  donor_name VARCHAR(120) NULL,
+  donor_email VARCHAR(255) NULL,
+  message TEXT NULL,
+  stripe_session_id VARCHAR(255) NULL,
+  stripe_payment_intent_id VARCHAR(255) NULL,
+  status ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at DATETIME NULL,
+  INDEX idx_donations_status (status),
+  INDEX idx_donations_created (created_at)
+);

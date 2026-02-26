@@ -15,6 +15,9 @@ import { volunteersRouter } from './routes/volunteers.js';
 import { verificationsRouter } from './routes/verifications.js';
 import { profileRouter } from './routes/profile.js';
 import { ngosRouter } from './routes/ngos.js';
+import { vetsRouter } from './routes/vets.js';
+import { medicalRecordsRouter } from './routes/medical-records.js';
+import { donationsRouter } from './routes/donations.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { pingDb } from './db/pool.js';
 import { migrate } from './db/migrate.js';
@@ -55,10 +58,26 @@ app.use('/api', profileRouter);
 // Mount reports router BEFORE dogs router to avoid route conflicts
 app.use('/api', reportsRouter);
 app.use('/api', dogsRouter);
-app.use('/api', adoptionsRouter);
-app.use('/api', notificationsRouter);
-app.use('/api', volunteersRouter);
-app.use('/api', verificationsRouter);
+
+// Scope adoption routes under /api/adoptions so their auth guard
+// does not affect other public routes like /api/donations.
+app.use('/api/adoptions', adoptionsRouter);
+
+// Scope notifications routes under /api/notifications so their auth guard
+// does not affect other public routes like /api/donations.
+app.use('/api/notifications', notificationsRouter);
+
+// Scope volunteers router under /api/volunteers so its superadmin-only guard
+// does not affect other public or NGO-admin routes like /api/dogs.
+app.use('/api/volunteers', volunteersRouter);
+app.use('/api/verifications', verificationsRouter);
+
+// Mount vets router at specific path to avoid middleware conflicts
+app.use('/api/vets', vetsRouter);
+
+// Other feature routers
+app.use('/api', medicalRecordsRouter);
+app.use('/api', donationsRouter);
 app.use('/api', ngosRouter);
 
 app.use(errorHandler);

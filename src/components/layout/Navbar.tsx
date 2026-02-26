@@ -24,6 +24,7 @@ const publicLinks = [
   { href: '/', label: 'Home' },
   { href: '/adopt', label: 'Adopt' },
   { href: '/report', label: 'Report a Dog' },
+  { href: '/donate', label: 'Donate' },
   { href: '/about', label: 'About' },
 ];
 

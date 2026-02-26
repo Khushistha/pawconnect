@@ -67,6 +67,10 @@ const envSchema = z.object({
   EMAIL_USER: z.string().email().optional(),
   EMAIL_PASS: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),
+
+  // Stripe (for donations)
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
 });
 
 export const env = envSchema.parse(normalized);
