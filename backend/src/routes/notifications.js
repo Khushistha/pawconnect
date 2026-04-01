@@ -9,16 +9,18 @@ export const notificationsRouter = Router();
 // Router is mounted under /api/notifications so these paths are relative.
 notificationsRouter.use(requireAuth);
 
-// GET /api/notifications - list recent notifications for current user
+// GET /api/notifications - list recent unread notifications for current user
 notificationsRouter.get('/', async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
     if (!userId) throw new HttpError(401, 'Unauthorized');
 
+    res.set('Cache-Control', 'private, no-store');
+
     const [rows] = await pool.query(
       `SELECT id, user_id, title, message, type, link, is_read, created_at
        FROM notifications
-       WHERE user_id = ?
+       WHERE user_id = ? AND is_read = 0
        ORDER BY created_at DESC
        LIMIT 50`,
       [userId]
@@ -41,12 +43,29 @@ notificationsRouter.get('/', async (req, res, next) => {
   }
 });
 
-// DELETE /api/notifications - remove all notifications for current user
+// PATCH /api/notifications/read-all — dismiss all (marks read; bell only lists unread)
+notificationsRouter.patch('/read-all', async (req, res, next) => {
+  try {
+    const userId = req.user?.sub || req.user?.id;
+    if (!userId) throw new HttpError(401, 'Unauthorized');
+
+    res.set('Cache-Control', 'private, no-store');
+    await pool.query(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0`, [
+      userId,
+    ]);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/notifications — permanently remove all rows for current user
 notificationsRouter.delete('/', async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
     if (!userId) throw new HttpError(401, 'Unauthorized');
 
+    res.set('Cache-Control', 'private, no-store');
     await pool.query(`DELETE FROM notifications WHERE user_id = ?`, [userId]);
     res.json({ ok: true });
   } catch (err) {
@@ -67,6 +86,7 @@ notificationsRouter.patch('/:id/read', async (req, res, next) => {
     );
 
     if (result.affectedRows === 0) throw new HttpError(404, 'Notification not found');
+    res.set('Cache-Control', 'private, no-store');
     res.json({ ok: true });
   } catch (err) {
     next(err);

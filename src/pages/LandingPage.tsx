@@ -253,13 +253,23 @@ export default function LandingPage() {
                 <ChevronRight className="w-5 h-5 ml-2" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="text-lg px-8 py-6 rounded-xl border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="text-lg px-8 py-6 rounded-xl border-2 border-primary-foreground/50 bg-transparent text-primary-foreground shadow-sm transition-colors hover:bg-primary-foreground hover:text-primary hover:border-primary-foreground focus-visible:ring-primary-foreground/40"
+            >
               <Link to="/donate">
                 <Heart className="w-5 h-5 mr-2" />
                 Donate
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="text-lg px-8 py-6 rounded-xl border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="text-lg px-8 py-6 rounded-xl border-2 border-primary-foreground/50 bg-transparent text-primary-foreground shadow-sm transition-colors hover:bg-primary-foreground hover:text-primary hover:border-primary-foreground focus-visible:ring-primary-foreground/40"
+            >
               <Link to="/about">
                 Learn More
               </Link>

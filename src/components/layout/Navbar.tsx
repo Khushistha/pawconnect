@@ -15,6 +15,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLogoutConfirmToast } from '@/hooks/use-logout-confirm-toast';
 import { cn } from '@/lib/utils';
 import type { RescueReport } from '@/types';
 
@@ -46,6 +47,7 @@ export function Navbar() {
   }>>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const { user, isAuthenticated, logout, token } = useAuth();
+  const confirmLogout = useLogoutConfirmToast(logout);
   const location = useLocation();
 
   useEffect(() => {
@@ -244,7 +246,10 @@ export function Navbar() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout} className="text-destructive cursor-pointer">
+                  <DropdownMenuItem
+                    onClick={() => confirmLogout()}
+                    className="text-destructive cursor-pointer"
+                  >
                     <LogOut className="w-4 h-4 mr-2" />
                     Logout
                   </DropdownMenuItem>
@@ -333,8 +338,8 @@ export function Navbar() {
                   </Link>
                   <button
                     onClick={() => {
-                      logout();
                       setMobileMenuOpen(false);
+                      confirmLogout();
                     }}
                     className="flex items-center gap-2 w-full text-left px-4 py-3 rounded-lg font-medium text-destructive hover:bg-destructive/10"
                   >

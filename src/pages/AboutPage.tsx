@@ -132,7 +132,12 @@ export default function AboutPage() {
             <Button asChild size="lg" className="btn-hero-secondary">
               <Link to="/register">Get Started</Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="border-2 border-primary-foreground/50 bg-transparent text-primary-foreground shadow-sm transition-colors hover:bg-primary-foreground hover:text-primary hover:border-primary-foreground focus-visible:ring-primary-foreground/40"
+            >
               <Link to="/adopt">Browse Dogs</Link>
             </Button>
           </div>

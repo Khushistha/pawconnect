@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useLogoutConfirmToast } from '@/hooks/use-logout-confirm-toast';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/types';
 
@@ -80,6 +81,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [clearingNotifications, setClearingNotifications] = useState(false);
   const { toast } = useToast();
   const { user, logout, isAuthenticated, token } = useAuth();
+  const confirmLogout = useLogoutConfirmToast(logout);
   const location = useLocation();
 
   useEffect(() => {
@@ -96,8 +98,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     setLoadingNotifications(true);
     try {
       const response = await fetch(`${API_URL}/notifications`, {
+        cache: 'no-store',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       });
       if (response.ok) {
@@ -125,8 +128,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     if (!token || notifications.length === 0) return;
     setClearingNotifications(true);
     try {
-      const response = await fetch(`${API_URL}/notifications`, {
-        method: 'DELETE',
+      const response = await fetch(`${API_URL}/notifications/read-all`, {
+        method: 'PATCH',
+        cache: 'no-store',
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -348,7 +352,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <Button variant="ghost" size="icon" onClick={logout}>
+            <Button variant="ghost" size="icon" onClick={() => confirmLogout()}>
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
