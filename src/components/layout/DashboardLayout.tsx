@@ -23,6 +23,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/types';
 
@@ -76,6 +77,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     type: 'info' | 'success' | 'warning' | 'error';
   }>>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [clearingNotifications, setClearingNotifications] = useState(false);
+  const { toast } = useToast();
   const { user, logout, isAuthenticated, token } = useAuth();
   const location = useLocation();
 
@@ -115,6 +118,36 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       // Silently fail
     } finally {
       setLoadingNotifications(false);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (!token || notifications.length === 0) return;
+    setClearingNotifications(true);
+    try {
+      const response = await fetch(`${API_URL}/notifications`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        setNotifications([]);
+      } else {
+        toast({
+          title: 'Could not clear notifications',
+          description: 'Please try again.',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Could not clear notifications',
+        description: 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setClearingNotifications(false);
     }
   };
 
@@ -305,9 +338,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         variant="ghost"
                         size="sm"
                         className="w-full text-xs"
-                        onClick={() => setNotifications([])}
+                        disabled={clearingNotifications}
+                        onClick={() => void clearAllNotifications()}
                       >
-                        Clear all
+                        {clearingNotifications ? 'Clearing…' : 'Clear all'}
                       </Button>
                     </div>
                   )}

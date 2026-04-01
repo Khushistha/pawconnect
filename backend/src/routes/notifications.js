@@ -41,6 +41,19 @@ notificationsRouter.get('/', async (req, res, next) => {
   }
 });
 
+// DELETE /api/notifications - remove all notifications for current user
+notificationsRouter.delete('/', async (req, res, next) => {
+  try {
+    const userId = req.user?.sub || req.user?.id;
+    if (!userId) throw new HttpError(401, 'Unauthorized');
+
+    await pool.query(`DELETE FROM notifications WHERE user_id = ?`, [userId]);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/notifications/:id/read - mark notification as read
 notificationsRouter.patch('/:id/read', async (req, res, next) => {
   try {
