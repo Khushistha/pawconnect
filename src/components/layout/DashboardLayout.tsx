@@ -1,5 +1,5 @@
 import { useState, useEffect, ReactNode } from 'react';
-import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { 
   Heart, 
   LayoutDashboard, 
@@ -14,9 +14,17 @@ import {
   Stethoscope,
   MapPin,
   FileText,
-  Building2
+  Building2,
+  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Popover,
   PopoverContent,
@@ -76,6 +84,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     message: string;
     timestamp: Date;
     type: 'info' | 'success' | 'warning' | 'error';
+    read: boolean;
+    link?: string;
   }>>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [clearingNotifications, setClearingNotifications] = useState(false);
@@ -83,6 +93,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user, logout, isAuthenticated, token } = useAuth();
   const confirmLogout = useLogoutConfirmToast(logout);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   useEffect(() => {
     if (token && (user?.role === 'ngo_admin' || user?.role === 'superadmin')) {
@@ -113,6 +126,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             message: n.message,
             timestamp: new Date(n.createdAt),
             type: n.type,
+            read: !!n.read,
+            link: n.link,
           }));
 
         setNotifications(newNotifications);
@@ -124,12 +139,42 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   };
 
+  const markNotificationRead = async (id: string) => {
+    if (!token) return false;
+    try {
+      const response = await fetch(`${API_URL}/notifications/${encodeURIComponent(id)}/read`, {
+        method: 'PATCH',
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const onNotificationClick = async (n: (typeof notifications)[0]) => {
+    if (!n.read) {
+      const ok = await markNotificationRead(n.id);
+      if (ok) {
+        setNotifications((prev) =>
+          prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
+        );
+      }
+    }
+    if (n.link) {
+      navigate(n.link.startsWith('/') ? n.link : `/${n.link}`);
+    }
+  };
+
   const clearAllNotifications = async () => {
     if (!token || notifications.length === 0) return;
     setClearingNotifications(true);
     try {
-      const response = await fetch(`${API_URL}/notifications/read-all`, {
-        method: 'PATCH',
+      const response = await fetch(`${API_URL}/notifications`, {
+        method: 'DELETE',
         cache: 'no-store',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -286,9 +331,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative">
                     <Bell className="w-5 h-5" />
-                    {notifications.length > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
-                        {notifications.length > 9 ? '9+' : notifications.length}
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[1rem] h-4 px-0.5 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                        {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
                     )}
                   </Button>
@@ -304,34 +349,66 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       </div>
                     ) : notifications.length === 0 ? (
                       <div className="p-8 text-center text-sm text-muted-foreground">
-                        No new notifications
+                        No notifications
                       </div>
                     ) : (
                       <div className="divide-y">
                         {notifications.map((notification) => (
-                          <div
+                          <button
                             key={notification.id}
-                            className="p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                            type="button"
+                            className={cn(
+                              'w-full text-left p-4 hover:bg-muted/50 transition-colors',
+                              notification.read && 'opacity-75'
+                            )}
+                            onClick={() => void onNotificationClick(notification)}
                           >
                             <div className="flex items-start gap-3">
-                              <div className={cn(
-                                'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
-                                notification.type === 'error' && 'bg-destructive',
-                                notification.type === 'warning' && 'bg-yellow-500',
-                                notification.type === 'success' && 'bg-green-500',
-                                notification.type === 'info' && 'bg-blue-500'
-                              )} />
+                              <div
+                                className={cn(
+                                  'w-2 h-2 rounded-full mt-1.5 flex-shrink-0',
+                                  notification.read
+                                    ? 'bg-muted-foreground/40'
+                                    : cn(
+                                        'ring-2 ring-offset-2 ring-offset-background',
+                                        notification.type === 'error' &&
+                                          'bg-destructive ring-destructive/30',
+                                        notification.type === 'warning' &&
+                                          'bg-yellow-500 ring-yellow-500/30',
+                                        notification.type === 'success' &&
+                                          'bg-green-500 ring-green-500/30',
+                                        (notification.type === 'info' ||
+                                          !notification.type) &&
+                                          'bg-blue-500 ring-blue-500/30'
+                                      )
+                                )}
+                              />
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium">{notification.title}</p>
+                                <div className="flex items-start justify-between gap-2">
+                                  <p
+                                    className={cn(
+                                      'text-sm',
+                                      notification.read ? 'font-medium text-muted-foreground' : 'font-semibold'
+                                    )}
+                                  >
+                                    {notification.title}
+                                  </p>
+                                  {!notification.read && (
+                                    <span className="text-[10px] uppercase tracking-wide text-primary shrink-0">
+                                      New
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                   {notification.message}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-1">
                                   {notification.timestamp.toLocaleString()}
+                                  {notification.read ? ' · Read' : ''}
                                 </p>
                               </div>
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -352,9 +429,47 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <Button variant="ghost" size="icon" onClick={() => confirmLogout()}>
-              <LogOut className="w-5 h-5" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  aria-label="Account menu"
+                >
+                  {user.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt=""
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <User className="h-5 w-5" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5">
+                  <p className="font-medium truncate">{user.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/profile" className="cursor-pointer">
+                    <User className="mr-2 h-4 w-4" />
+                    Profile
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                  onClick={() => confirmLogout()}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 

@@ -9,7 +9,7 @@ export const notificationsRouter = Router();
 // Router is mounted under /api/notifications so these paths are relative.
 notificationsRouter.use(requireAuth);
 
-// GET /api/notifications - list recent unread notifications for current user
+// GET /api/notifications - list recent notifications (read + unread) for current user
 notificationsRouter.get('/', async (req, res, next) => {
   try {
     const userId = req.user?.sub || req.user?.id;
@@ -20,7 +20,7 @@ notificationsRouter.get('/', async (req, res, next) => {
     const [rows] = await pool.query(
       `SELECT id, user_id, title, message, type, link, is_read, created_at
        FROM notifications
-       WHERE user_id = ? AND is_read = 0
+       WHERE user_id = ?
        ORDER BY created_at DESC
        LIMIT 50`,
       [userId]
