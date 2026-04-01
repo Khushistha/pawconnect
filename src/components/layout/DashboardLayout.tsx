@@ -32,7 +32,6 @@ import {
 } from '@/components/ui/popover';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { useLogoutConfirmToast } from '@/hooks/use-logout-confirm-toast';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/types';
 
@@ -91,7 +90,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [clearingNotifications, setClearingNotifications] = useState(false);
   const { toast } = useToast();
   const { user, logout, isAuthenticated, token } = useAuth();
-  const confirmLogout = useLogoutConfirmToast(logout);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -463,7 +461,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="cursor-pointer text-destructive focus:text-destructive"
-                  onClick={() => confirmLogout()}
+                  onClick={() => logout()}
                 >
                   <LogOut className="mr-2 h-4 w-4" />
                   Logout
