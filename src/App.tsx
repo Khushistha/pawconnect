@@ -44,6 +44,7 @@ import ProfilePage from "@/pages/ProfilePage";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AuthRedirect } from "@/components/auth/AuthRedirect";
 import NotFound from "@/pages/NotFound";
+import { ScrollToTop } from "@/components/common/ScrollToTop";
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <ScrollToTop />
           <Routes>
             {/* Public Routes */}
             <Route element={<PublicLayout />}>

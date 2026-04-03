@@ -410,7 +410,7 @@ export default function DogsManagement() {
     }
   };
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length + photoFiles.length > 10) {
       toast({
@@ -418,6 +418,7 @@ export default function DogsManagement() {
         description: 'Maximum 10 photos allowed.',
         variant: 'destructive',
       });
+      e.target.value = '';
       return;
     }
 
@@ -441,19 +442,39 @@ export default function DogsManagement() {
       return true;
     });
 
-    setPhotoFiles(prev => [...prev, ...newFiles]);
-    newFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreviews(prev => [...prev, reader.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    e.target.value = '';
+
+    if (newFiles.length === 0) return;
+
+    setPhotoFiles((prev) => [...prev, ...newFiles]);
+
+    const newPreviews = await Promise.all(
+      newFiles.map(
+        (file) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('read failed'));
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    setPhotoPreviews((prev) => [...prev, ...newPreviews]);
   };
 
   const removePhoto = (index: number) => {
-    setPhotoFiles(prev => prev.filter((_, i) => i !== index - (photoPreviews.length - prev.length)));
-    setPhotoPreviews(prev => prev.filter((_, i) => i !== index));
+    const existingCount = formData.photos.length;
+    if (index < existingCount) {
+      setFormData((fd) => ({
+        ...fd,
+        photos: fd.photos.filter((_, i) => i !== index),
+      }));
+    } else {
+      const fileIndex = index - existingCount;
+      setPhotoFiles((prev) => prev.filter((_, i) => i !== fileIndex));
+    }
+    setPhotoPreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   const rescuedDogs = dogs.filter(dog => dog.fromReport);

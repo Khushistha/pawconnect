@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Edit2, Trash2, Search, X, Upload, MapPin, RefreshCw, AlertCircle, Phone, PawPrint } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, X, Upload, MapPin, RefreshCw, AlertCircle, Phone, PawPrint, Building2, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,8 +41,14 @@ import type { Dog, Location, DogStatus, DogGender, DogSize, RescueReport, Rescue
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+function isVolunteerReportLockedForNgo(report: RescueReport, userId: string | undefined, role: string | undefined) {
+  if (role !== 'ngo_admin' || !userId) return false;
+  if (!report.assignedNgoId) return false;
+  return report.assignedNgoId !== userId;
+}
+
 export default function RescueCasesManagement() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { toast } = useToast();
   const [dogs, setDogs] = useState<Dog[]>([]);
   const [reports, setReports] = useState<RescueReport[]>([]);
@@ -201,30 +207,63 @@ export default function RescueCasesManagement() {
         description: 'Maximum 10 photos allowed.',
         variant: 'destructive',
       });
+      e.target.value = '';
       return;
     }
 
-    const newFiles = [...photoFiles, ...files];
-    setPhotoFiles(newFiles);
-
-    // Create previews
-    const previewPromises = newFiles.map(file => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+    const validFiles = files.filter((file) => {
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: 'Invalid file type',
+          description: 'Please upload image files only.',
+          variant: 'destructive',
+        });
+        return false;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: 'File too large',
+          description: 'Please upload files smaller than 5MB.',
+          variant: 'destructive',
+        });
+        return false;
+      }
+      return true;
     });
 
-    const previews = await Promise.all(previewPromises);
-    setPhotoPreviews([...formData.photos, ...previews]);
+    e.target.value = '';
+
+    if (validFiles.length === 0) return;
+
+    setPhotoFiles((prev) => [...prev, ...validFiles]);
+
+    const newPreviews = await Promise.all(
+      validFiles.map(
+        (file) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('read failed'));
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    setPhotoPreviews((prev) => [...prev, ...newPreviews]);
   };
 
   const removePhoto = (index: number) => {
-    const newFiles = photoFiles.filter((_, i) => i !== index - formData.photos.length);
-    setPhotoFiles(newFiles);
-    const newPreviews = photoPreviews.filter((_, i) => i !== index);
-    setPhotoPreviews(newPreviews);
+    const existingCount = formData.photos.length;
+    if (index < existingCount) {
+      setFormData((fd) => ({
+        ...fd,
+        photos: fd.photos.filter((_, i) => i !== index),
+      }));
+    } else {
+      const fileIndex = index - existingCount;
+      setPhotoFiles((prev) => prev.filter((_, i) => i !== fileIndex));
+    }
+    setPhotoPreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleLocationSelect = (location: Location) => {
@@ -348,25 +387,21 @@ export default function RescueCasesManagement() {
         });
         fetchDogs();
       } else if (reportToDelete) {
-        // Note: Backend doesn't have DELETE endpoint for reports yet, but we can add it
-        // For now, we'll just update status to cancelled
-        const response = await fetch(`${API_URL}/reports/${reportToDelete.id}/status`, {
-          method: 'PATCH',
+        const response = await fetch(`${API_URL}/reports/${reportToDelete.id}`, {
+          method: 'DELETE',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ status: 'cancelled' }),
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || 'Failed to cancel report');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error((errorData as { message?: string }).message || 'Failed to delete report');
         }
 
         toast({
           title: 'Success',
-          description: 'Report cancelled successfully.',
+          description: 'Report deleted successfully.',
         });
         fetchReports();
       }
@@ -555,7 +590,7 @@ export default function RescueCasesManagement() {
                         />
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <StatusBadge status={report.status} />
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
                             report.urgency === 'critical' ? 'bg-destructive/10 text-destructive' :
@@ -564,7 +599,21 @@ export default function RescueCasesManagement() {
                           }`}>
                             {report.urgency.toUpperCase()}
                           </span>
+                          {(report.assignedNgoOrganization || report.assignedNgoName) && (
+                            <span className="text-xs inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                              <Building2 className="w-3 h-3 shrink-0" />
+                              Handled by: {report.assignedNgoOrganization || report.assignedNgoName}
+                            </span>
+                          )}
                         </div>
+                        {isVolunteerReportLockedForNgo(report, user?.id, user?.role) && (
+                          <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800 rounded-md px-2 py-1.5 mb-2">
+                            <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>
+                              Another NGO is managing this case. You can view details but cannot change status or create a dog from this report.
+                            </span>
+                          </div>
+                        )}
                         <p className="text-sm mb-2">{report.description}</p>
                         <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
                           <span className="flex items-center gap-1">
@@ -580,7 +629,7 @@ export default function RescueCasesManagement() {
                           <span>Reported by: {report.reportedBy}</span>
                           <span>{new Date(report.reportedAt).toLocaleDateString()}</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {!report.dogId && (
                             <Button
                               variant="outline"
@@ -625,7 +674,10 @@ export default function RescueCasesManagement() {
                                   setCreatingDog(null);
                                 }
                               }}
-                              disabled={creatingDog === report.id}
+                              disabled={
+                                creatingDog === report.id ||
+                                isVolunteerReportLockedForNgo(report, user?.id, user?.role)
+                              }
                               className="bg-primary text-primary-foreground hover:bg-primary/90"
                             >
                               {creatingDog === report.id ? (
@@ -667,9 +719,11 @@ export default function RescueCasesManagement() {
                                     throw new Error(error.message || 'Failed to update status');
                                   }
 
-                                  setReports(prev => prev.map(r => 
-                                    r.id === report.id ? { ...r, status: value as RescueStatus } : r
-                                  ));
+                                  const data = await response.json();
+                                  const updated = data.item as RescueReport;
+                                  setReports((prev) =>
+                                    prev.map((r) => (r.id === report.id ? { ...r, ...updated } : r))
+                                  );
 
                                   toast({
                                     title: 'Success',
@@ -687,7 +741,11 @@ export default function RescueCasesManagement() {
                               };
                               updateStatus();
                             }}
-                            disabled={updatingStatus === report.id || creatingDog === report.id}
+                            disabled={
+                              updatingStatus === report.id ||
+                              creatingDog === report.id ||
+                              isVolunteerReportLockedForNgo(report, user?.id, user?.role)
+                            }
                           >
                             <SelectTrigger className="w-[140px] h-8 text-xs">
                               {updatingStatus === report.id ? (
@@ -712,7 +770,10 @@ export default function RescueCasesManagement() {
                               setIsDeleteDialogOpen(true);
                             }}
                             className="text-destructive hover:text-destructive"
-                            disabled={creatingDog === report.id}
+                            disabled={
+                              creatingDog === report.id ||
+                              isVolunteerReportLockedForNgo(report, user?.id, user?.role)
+                            }
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -965,19 +1026,19 @@ export default function RescueCasesManagement() {
             <AlertDialogTitle>
               {dogToDelete 
                 ? `Are you sure you want to delete ${dogToDelete.name}?`
-                : `Are you sure you want to cancel this report?`}
+                : 'Are you sure you want to delete this report?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {dogToDelete
                 ? 'This action cannot be undone. This will permanently delete the rescue case and all associated data.'
-                : 'This will mark the report as cancelled. This action can be reversed by updating the status.'}
+                : 'This action cannot be undone. This will permanently delete the report and its photos from the system.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive" disabled={deleting}>
               {deleting && <ButtonSpinner />}
-              {deleting ? (dogToDelete ? 'Deleting...' : 'Cancelling...') : (dogToDelete ? 'Delete' : 'Cancel Report')}
+              {deleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -41,6 +41,9 @@ const createReportSchema = z.object({
   photos: z.array(z.string()).max(10).optional(), // Can be base64 or URL
 });
 
+/** JOIN users to expose which NGO claimed the report (assigned_ngo_id). */
+const REPORT_FROM = `FROM rescue_reports r LEFT JOIN users u ON u.id = r.assigned_ngo_id`;
+
 function mapReportRow(row, photoUrls = []) {
   return {
     id: row.id,
@@ -60,7 +63,28 @@ function mapReportRow(row, photoUrls = []) {
     urgency: row.urgency,
     notes: row.notes ?? undefined,
     contactPhone: row.contact_phone ?? undefined,
+    assignedNgoId: row.assigned_ngo_id ?? undefined,
+    assignedNgoName: row.assigned_ngo_name ?? undefined,
+    assignedNgoOrganization: row.assigned_ngo_org ?? undefined,
   };
+}
+
+async function assertNgoAdminCanModifyReport(req, row) {
+  const userRole = req.user?.role;
+  const userId = req.user?.sub || req.user?.id;
+  if (userRole !== 'ngo_admin' || !row?.assigned_ngo_id) return;
+  if (row.assigned_ngo_id === userId) return;
+
+  const [ngoRows] = await pool.query(
+    `SELECT name, organization FROM users WHERE id = ? LIMIT 1`,
+    [row.assigned_ngo_id]
+  );
+  const n = ngoRows?.[0];
+  const label = n?.organization?.trim() || n?.name || 'another organization';
+  throw new HttpError(
+    403,
+    `This report is being handled by ${label}. Only that NGO can change status or manage this case.`
+  );
 }
 
 // PUBLIC ROUTE - No authentication required
@@ -156,7 +180,10 @@ reportsRouter.post('/reports', async (req, res, next) => {
       );
     }
 
-    const [rows] = await pool.query(`SELECT * FROM rescue_reports WHERE id = ? LIMIT 1`, [id]);
+    const [rows] = await pool.query(
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM} WHERE r.id = ? LIMIT 1`,
+      [id]
+    );
     const row = rows?.[0];
     if (!row) throw new HttpError(500, 'Failed to create report');
 
@@ -177,7 +204,7 @@ reportsRouter.post('/reports', async (req, res, next) => {
 reportsRouter.get('/reports', async (_req, res, next) => {
   try {
     const [reportRows] = await pool.query(
-      `SELECT * FROM rescue_reports ORDER BY reported_at DESC LIMIT 200`
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM} ORDER BY r.reported_at DESC LIMIT 200`
     );
     const reportIds = reportRows.map((r) => r.id);
 
@@ -219,16 +246,16 @@ reportsRouter.get('/reports/my-tasks', requireAuth, async (req, res, next) => {
     }
 
     const [reportRows] = await pool.query(
-      `SELECT * FROM rescue_reports 
-       WHERE assigned_to = ? 
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM}
+       WHERE r.assigned_to = ? 
        ORDER BY 
-         CASE urgency 
+         CASE r.urgency 
            WHEN 'critical' THEN 1 
            WHEN 'high' THEN 2 
            WHEN 'medium' THEN 3 
            ELSE 4 
          END,
-         reported_at DESC
+         r.reported_at DESC
        LIMIT 100`,
       [userId]
     );
@@ -276,9 +303,9 @@ reportsRouter.get('/reports/my-reports', requireAuth, async (req, res, next) => 
 
     // Match reports by reported_by field (name or email)
     const [reportRows] = await pool.query(
-      `SELECT * FROM rescue_reports 
-       WHERE reported_by = ? OR reported_by = ?
-       ORDER BY reported_at DESC
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM}
+       WHERE r.reported_by = ? OR r.reported_by = ?
+       ORDER BY r.reported_at DESC
        LIMIT 100`,
       [user.name, user.email]
     );
@@ -318,15 +345,15 @@ reportsRouter.get('/reports/all', requireAuth, async (req, res, next) => {
     }
 
     const [reportRows] = await pool.query(
-      `SELECT * FROM rescue_reports 
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM}
        ORDER BY 
-         CASE urgency 
+         CASE r.urgency 
            WHEN 'critical' THEN 1 
            WHEN 'high' THEN 2 
            WHEN 'medium' THEN 3 
            ELSE 4 
          END,
-         reported_at DESC
+         r.reported_at DESC
        LIMIT 200`
     );
     
@@ -365,21 +392,43 @@ reportsRouter.patch('/reports/:id/status', requireAuth, async (req, res, next) =
     }
 
     const { id } = req.params;
+    const userId = req.user?.sub || req.user?.id;
     const { status } = z.object({
       status: z.enum(['pending', 'assigned', 'in_progress', 'completed', 'cancelled']),
     }).parse(req.body);
 
-    const [result] = await pool.query(
-      `UPDATE rescue_reports SET status = ? WHERE id = ?`,
-      [status, id]
+    const [beforeRows] = await pool.query(
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM} WHERE r.id = ? LIMIT 1`,
+      [id]
     );
+    const before = beforeRows?.[0];
+    if (!before) throw new HttpError(404, 'Report not found');
 
-    if (result.affectedRows === 0) {
-      throw new HttpError(404, 'Report not found');
+    await assertNgoAdminCanModifyReport(req, before);
+
+    const statusesThatClaim = ['assigned', 'in_progress', 'completed'];
+    const shouldClaimNgo =
+      userRole === 'ngo_admin' &&
+      !before.assigned_ngo_id &&
+      statusesThatClaim.includes(status);
+
+    if (shouldClaimNgo) {
+      await pool.query(
+        `UPDATE rescue_reports SET status = ?, assigned_ngo_id = ? WHERE id = ?`,
+        [status, userId, id]
+      );
+    } else {
+      const [result] = await pool.query(`UPDATE rescue_reports SET status = ? WHERE id = ?`, [status, id]);
+
+      if (result.affectedRows === 0) {
+        throw new HttpError(404, 'Report not found');
+      }
     }
 
-    // Fetch updated report
-    const [rows] = await pool.query(`SELECT * FROM rescue_reports WHERE id = ?`, [id]);
+    const [rows] = await pool.query(
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM} WHERE r.id = ? LIMIT 1`,
+      [id]
+    );
     const row = rows?.[0];
     if (!row) throw new HttpError(404, 'Report not found');
 
@@ -408,6 +457,36 @@ reportsRouter.patch('/reports/:id/status', requireAuth, async (req, res, next) =
   }
 });
 
+// DELETE /api/reports/:id - Permanently delete report and cascade photos (NGO admin/superadmin only)
+reportsRouter.delete('/reports/:id', requireAuth, async (req, res, next) => {
+  try {
+    const userRole = req.user?.role;
+    if (userRole !== 'ngo_admin' && userRole !== 'superadmin') {
+      throw new HttpError(403, 'Only NGO admins and superadmins can delete reports');
+    }
+
+    const { id } = req.params;
+    const [beforeRows] = await pool.query(
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM} WHERE r.id = ? LIMIT 1`,
+      [id]
+    );
+    const before = beforeRows?.[0];
+    if (!before) throw new HttpError(404, 'Report not found');
+
+    await assertNgoAdminCanModifyReport(req, before);
+
+    const [result] = await pool.query(`DELETE FROM rescue_reports WHERE id = ?`, [id]);
+
+    if (result.affectedRows === 0) {
+      throw new HttpError(404, 'Report not found');
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/reports/:id/create-dog - Create a dog from a rescue report (NGO admin/superadmin only)
 reportsRouter.post('/reports/:id/create-dog', requireAuth, async (req, res, next) => {
   try {
@@ -417,13 +496,17 @@ reportsRouter.post('/reports/:id/create-dog', requireAuth, async (req, res, next
     }
 
     const { id: reportId } = req.params;
-    
-    // Fetch the report
-    const [reportRows] = await pool.query(`SELECT * FROM rescue_reports WHERE id = ? LIMIT 1`, [reportId]);
+
+    const [reportRows] = await pool.query(
+      `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM} WHERE r.id = ? LIMIT 1`,
+      [reportId]
+    );
     const report = reportRows?.[0];
     if (!report) {
       throw new HttpError(404, 'Report not found');
     }
+
+    await assertNgoAdminCanModifyReport(req, report);
 
     // Check if a dog already exists for this report
     if (report.dog_id) {

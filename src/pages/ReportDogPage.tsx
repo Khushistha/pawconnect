@@ -54,21 +54,30 @@ export default function ReportDogPage() {
     }
   }, [user, setValue]);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files) {
-      const newFiles = Array.from(files).slice(0, 4 - photoFiles.length);
-      setPhotoFiles(prev => [...prev, ...newFiles]);
+    if (!files) return;
 
-      // Create previews
-      newFiles.forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setPhotoPreviews(prev => [...prev, reader.result as string]);
-        };
-        reader.readAsDataURL(file);
-      });
-    }
+    const newFiles = Array.from(files).slice(0, 4 - photoFiles.length);
+    e.target.value = '';
+
+    if (newFiles.length === 0) return;
+
+    setPhotoFiles((prev) => [...prev, ...newFiles]);
+
+    const newPreviews = await Promise.all(
+      newFiles.map(
+        (file) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('read failed'));
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    setPhotoPreviews((prev) => [...prev, ...newPreviews]);
   };
 
   const removePhoto = (index: number) => {

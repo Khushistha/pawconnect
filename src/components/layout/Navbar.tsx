@@ -245,7 +245,7 @@ export function Navbar() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => confirmLogout()}
+                    onClick={() => logout()}
                     className="text-destructive cursor-pointer"
                   >
                     <LogOut className="w-4 h-4 mr-2" />

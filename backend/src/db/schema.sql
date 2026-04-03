@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS rescue_reports (
   reported_at DATETIME NOT NULL,
   assigned_to CHAR(36) NULL,
   dog_id CHAR(36) NULL,
+  assigned_ngo_id CHAR(36) NULL,
   notes TEXT NULL,
   location_lat DOUBLE NOT NULL,
   location_lng DOUBLE NOT NULL,
@@ -81,7 +82,8 @@ CREATE TABLE IF NOT EXISTS rescue_reports (
   location_district VARCHAR(120) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_reports_status (status),
-  INDEX idx_reports_urgency (urgency)
+  INDEX idx_reports_urgency (urgency),
+  INDEX idx_reports_assigned_ngo (assigned_ngo_id)
 );
 
 CREATE TABLE IF NOT EXISTS rescue_report_photos (

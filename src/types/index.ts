@@ -67,6 +67,10 @@ export interface RescueReport {
   reportedBy: string;
   reportedAt: string;
   assignedTo?: string;
+  /** NGO admin user id that claimed this report (assigned / in progress / completed). */
+  assignedNgoId?: string;
+  assignedNgoName?: string;
+  assignedNgoOrganization?: string;
   dogId?: string;
   urgency: 'low' | 'medium' | 'high' | 'critical';
   notes?: string;

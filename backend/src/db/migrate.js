@@ -36,6 +36,13 @@ export async function migrate({ closePool = false } = {}) {
   }
 
   // dogs.vet_id + treatment_status - used to assign patients to veterinarians
+  if (!(await columnExists('rescue_reports', 'assigned_ngo_id'))) {
+    await pool.query(
+      `ALTER TABLE rescue_reports ADD COLUMN assigned_ngo_id CHAR(36) NULL AFTER dog_id`
+    );
+    await pool.query(`CREATE INDEX idx_reports_assigned_ngo ON rescue_reports (assigned_ngo_id)`);
+  }
+
   if (!(await columnExists('dogs', 'vet_id'))) {
     await pool.query(
       `ALTER TABLE dogs

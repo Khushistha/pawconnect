@@ -9,7 +9,9 @@ import {
   RefreshCw,
   MapPin,
   CheckCircle2,
-  Clock
+  Clock,
+  Building2,
+  Lock
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,8 +31,14 @@ import type { RescueReport, RescueStatus } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+function isVolunteerReportLockedForNgo(report: RescueReport, userId: string | undefined, role: string | undefined) {
+  if (role !== 'ngo_admin' || !userId) return false;
+  if (!report.assignedNgoId) return false;
+  return report.assignedNgoId !== userId;
+}
+
 export default function NGODashboard() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { toast } = useToast();
   const [reports, setReports] = useState<RescueReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,10 +115,9 @@ export default function NGODashboard() {
         throw new Error(error.message || 'Failed to update status');
       }
 
-      // Update local state
-      setReports(prev => prev.map(r => 
-        r.id === reportId ? { ...r, status: newStatus } : r
-      ));
+      const data = await response.json();
+      const updated = data.item as RescueReport;
+      setReports((prev) => prev.map((r) => (r.id === reportId ? { ...r, ...updated } : r)));
 
       // Add notification
       setNotifications(prev => [
@@ -257,7 +264,7 @@ export default function NGODashboard() {
                   {report.urgency !== 'critical' && <PawPrint className="w-5 h-5" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <StatusBadge status={report.status} />
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
                       report.urgency === 'critical' ? 'bg-destructive/10 text-destructive' :
@@ -266,7 +273,19 @@ export default function NGODashboard() {
                     }`}>
                       {report.urgency.toUpperCase()}
                     </span>
+                    {(report.assignedNgoOrganization || report.assignedNgoName) && (
+                      <span className="text-xs inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                        <Building2 className="w-3 h-3 shrink-0" />
+                        {report.assignedNgoOrganization || report.assignedNgoName}
+                      </span>
+                    )}
                   </div>
+                  {isVolunteerReportLockedForNgo(report, user?.id, user?.role) && (
+                    <p className="text-xs text-amber-800 dark:text-amber-200 flex items-start gap-1 mb-1">
+                      <Lock className="w-3 h-3 shrink-0 mt-0.5" />
+                      Managed by another NGO — status changes are disabled.
+                    </p>
+                  )}
                   <p className="text-sm font-medium truncate">{report.location.address}</p>
                   <p className="text-xs text-muted-foreground truncate mb-2">{report.description}</p>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
@@ -283,7 +302,10 @@ export default function NGODashboard() {
                     <Select
                       value={report.status}
                       onValueChange={(value) => updateReportStatus(report.id, value as RescueStatus)}
-                      disabled={updatingStatus === report.id}
+                      disabled={
+                        updatingStatus === report.id ||
+                        isVolunteerReportLockedForNgo(report, user?.id, user?.role)
+                      }
                     >
                       <SelectTrigger className="w-[140px] h-8 text-xs">
                         {updatingStatus === report.id ? (

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import L from 'leaflet';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { cn } from '@/lib/utils';
+import { formatCoordinatesFallback, reverseGeocode } from '@/lib/geocoding';
 import type { Location } from '@/types';
 
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -27,19 +28,15 @@ interface MockMapProps {
 
 function MapClickHandler({
   enabled,
-  onSelect,
+  onPick,
 }: {
   enabled: boolean;
-  onSelect: (loc: Location) => void;
+  onPick: (lat: number, lng: number) => void;
 }) {
   useMapEvents({
     click(e) {
       if (!enabled) return;
-      onSelect({
-        lat: e.latlng.lat,
-        lng: e.latlng.lng,
-        address: 'Selected Location, Nayabazar, Pokhara, Nepal',
-      });
+      onPick(e.latlng.lat, e.latlng.lng);
     },
   });
 
@@ -54,6 +51,43 @@ export function MockMap({
   className 
 }: MockMapProps) {
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
+
+  const resolvePick = useCallback(
+    (lat: number, lng: number) => {
+      const loading: Location = {
+        lat,
+        lng,
+        address: 'Looking up address…',
+      };
+      setSelectedLocation(loading);
+      setGeocoding(true);
+      onLocationSelect?.(loading);
+
+      reverseGeocode(lat, lng)
+        .then((res) => {
+          const loc: Location = {
+            lat,
+            lng,
+            address: res.address,
+            district: res.district,
+          };
+          setSelectedLocation(loc);
+          onLocationSelect?.(loc);
+        })
+        .catch(() => {
+          const loc: Location = {
+            lat,
+            lng,
+            address: formatCoordinatesFallback(lat, lng),
+          };
+          setSelectedLocation(loc);
+          onLocationSelect?.(loc);
+        })
+        .finally(() => setGeocoding(false));
+    },
+    [onLocationSelect]
+  );
 
   return (
     <div className={cn('relative w-full min-h-[300px] rounded-lg overflow-hidden', className)}>
@@ -68,13 +102,7 @@ export function MockMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <MapClickHandler
-          enabled={selectable}
-          onSelect={(loc) => {
-            setSelectedLocation(loc);
-            onLocationSelect?.(loc);
-          }}
-        />
+        <MapClickHandler enabled={selectable} onPick={resolvePick} />
 
         {markers.map((m) => (
           <Marker key={m.id} position={[m.location.lat, m.location.lng]}>
@@ -99,13 +127,7 @@ export function MockMap({
               dragend: (e) => {
                 const marker = e.target as L.Marker;
                 const ll = marker.getLatLng();
-                const loc: Location = {
-                  lat: ll.lat,
-                  lng: ll.lng,
-                  address: selectedLocation.address ?? 'Selected Location, Nayabazar, Pokhara, Nepal',
-                };
-                setSelectedLocation(loc);
-                onLocationSelect?.(loc);
+                resolvePick(ll.lat, ll.lng);
               },
             }}
           >
@@ -115,13 +137,23 @@ export function MockMap({
       </MapContainer>
 
       <div className="pointer-events-none absolute bottom-3 left-3 right-3 bg-card/90 backdrop-blur-sm rounded-lg p-3 shadow">
-        <p className="text-sm font-medium">{center.address}</p>
-        <p className="text-xs text-muted-foreground">
-          {center.lat.toFixed(4)}, {center.lng.toFixed(4)}
+        <p className="text-sm font-medium line-clamp-2">
+          {selectable && selectedLocation
+            ? selectedLocation.address
+            : center.address}
         </p>
-        {selectable && (
+        <p className="text-xs text-muted-foreground">
+          {(selectable && selectedLocation ? selectedLocation : center).lat.toFixed(4)},{' '}
+          {(selectable && selectedLocation ? selectedLocation : center).lng.toFixed(4)}
+        </p>
+        {selectable && geocoding && (
+          <p className="text-xs text-muted-foreground mt-1">Resolving place name…</p>
+        )}
+        {selectable && !geocoding && (
           <p className="text-xs text-primary mt-1">
-            Click on the map to drop a pin (drag to fine-tune)
+            {selectedLocation
+              ? 'Drag the pin to adjust — address updates automatically'
+              : 'Click on the map to drop a pin (drag to fine-tune)'}
           </p>
         )}
       </div>
