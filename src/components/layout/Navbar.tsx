@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, Heart, User, LogOut, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,6 +47,12 @@ export function Navbar() {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const { user, isAuthenticated, logout, token } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   useEffect(() => {
     if (token && (user?.role === 'ngo_admin' || user?.role === 'superadmin')) {
@@ -245,7 +251,7 @@ export function Navbar() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={() => logout()}
+                    onClick={() => handleLogout()}
                     className="text-destructive cursor-pointer"
                   >
                     <LogOut className="w-4 h-4 mr-2" />
@@ -337,7 +343,7 @@ export function Navbar() {
                   <button
                     onClick={() => {
                       setMobileMenuOpen(false);
-                      logout();
+                      handleLogout();
                     }}
                     className="flex items-center gap-2 w-full text-left px-4 py-3 rounded-lg font-medium text-destructive hover:bg-destructive/10"
                   >
