@@ -106,8 +106,34 @@ export default function DogProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, dog, autoOpened]);
 
+  const validateForm = () => {
+    const errors: string[] = [];
+
+    if (!form.applicantPhone || form.applicantPhone.trim().length < 6) {
+      errors.push('Phone number must be at least 6 characters');
+    }
+    if (!form.homeType || form.homeType.trim().length < 2) {
+      errors.push('Home type must be at least 2 characters');
+    }
+    if (!form.experience || form.experience.trim().length < 5) {
+      errors.push('Experience must be at least 5 characters');
+    }
+    if (!form.reason || form.reason.trim().length < 5) {
+      errors.push('Reason must be at least 5 characters');
+    }
+
+    return errors;
+  };
+
   const submitApplication = async () => {
     if (!token || !dog) return;
+
+    // Validate form before submitting
+    const errors = validateForm();
+    if (errors.length > 0) {
+      return; // Button is disabled, so this won't be reached in normal flow
+    }
+
     try {
       setSubmitting(true);
       const res = await fetch(`${API_URL}/adoptions/apply`, {
@@ -423,7 +449,11 @@ export default function DogProfilePage() {
                 value={form.applicantPhone}
                 onChange={(e) => setForm((p) => ({ ...p, applicantPhone: e.target.value }))}
                 placeholder="98xxxxxxxx"
+                className={form.applicantPhone.length < 6 && form.applicantPhone.length > 0 ? 'border-red-500' : ''}
               />
+              {form.applicantPhone.length < 6 && form.applicantPhone.length > 0 && (
+                <p className="text-xs text-red-500">Minimum 6 characters required</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -433,7 +463,11 @@ export default function DogProfilePage() {
                 value={form.homeType}
                 onChange={(e) => setForm((p) => ({ ...p, homeType: e.target.value }))}
                 placeholder="Apartment / House / Farm..."
+                className={form.homeType.length < 2 && form.homeType.length > 0 ? 'border-red-500' : ''}
               />
+              {form.homeType.length < 2 && form.homeType.length > 0 && (
+                <p className="text-xs text-red-500">Minimum 2 characters required</p>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -462,7 +496,11 @@ export default function DogProfilePage() {
                 value={form.experience}
                 onChange={(e) => setForm((p) => ({ ...p, experience: e.target.value }))}
                 placeholder="Tell us about your experience caring for animals..."
+                className={form.experience.length < 5 && form.experience.length > 0 ? 'border-red-500' : ''}
               />
+              {form.experience.length < 5 && form.experience.length > 0 && (
+                <p className="text-xs text-red-500">Minimum 5 characters required</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -472,7 +510,11 @@ export default function DogProfilePage() {
                 value={form.reason}
                 onChange={(e) => setForm((p) => ({ ...p, reason: e.target.value }))}
                 placeholder="Share your motivation and commitment..."
+                className={form.reason.length < 5 && form.reason.length > 0 ? 'border-red-500' : ''}
               />
+              {form.reason.length < 5 && form.reason.length > 0 && (
+                <p className="text-xs text-red-500">Minimum 5 characters required</p>
+              )}
             </div>
           </div>
 
@@ -480,7 +522,10 @@ export default function DogProfilePage() {
             <Button variant="outline" onClick={() => setApplyOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button onClick={submitApplication} disabled={submitting}>
+            <Button 
+              onClick={submitApplication} 
+              disabled={submitting || validateForm().length > 0}
+            >
               {submitting ? 'Submitting...' : 'Submit Application'}
             </Button>
           </DialogFooter>
