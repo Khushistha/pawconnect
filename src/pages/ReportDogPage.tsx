@@ -159,11 +159,6 @@ export default function ReportDogPage() {
 
       setIsSubmitting(false);
       setSubmitted(true);
-      
-      toast({
-        title: 'Report submitted!',
-        description: 'Our rescue team has been notified and will respond shortly.',
-      });
     } catch (error: any) {
       setIsSubmitting(false);
       toast({
@@ -330,7 +325,7 @@ export default function ReportDogPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="description">What did you observe?</Label>
+                <Label htmlFor="description">What did you observe? *</Label>
                 <Textarea
                   id="description"
                   placeholder="Describe the dog's appearance, behavior, and condition..."
@@ -375,7 +370,7 @@ export default function ReportDogPage() {
             <CardContent className="space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="contactName">Your Name</Label>
+                  <Label htmlFor="contactName">Your Name *</Label>
                   <Input
                     id="contactName"
                     placeholder="Enter your name"
@@ -386,7 +381,7 @@ export default function ReportDogPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="contactPhone">Phone Number</Label>
+                  <Label htmlFor="contactPhone">Phone Number *</Label>
                   <Input
                     id="contactPhone"
                     placeholder="+977-98..."

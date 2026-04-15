@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Search, X, Upload, MapPin, RefreshCw, AlertCircle, User, Stethoscope, UserCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Edit2, Trash2, Search, X, Upload, MapPin, RefreshCw, AlertCircle, User, Stethoscope, UserCheck, FileText, Syringe, Scissors, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,7 +38,7 @@ import { MockMap } from '@/components/maps/MockMap';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Spinner, ButtonSpinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import type { Dog, Location, DogStatus, DogGender, DogSize, User as UserType } from '@/types';
+import type { Dog, Location, DogStatus, DogGender, DogSize, User as UserType, MedicalRecord } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -52,6 +53,7 @@ interface VetSummary {
 export default function DogsManagement() {
   const { token } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [dogs, setDogs] = useState<Dog[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -72,6 +74,10 @@ export default function DogsManagement() {
   const [isAdopterDialogOpen, setIsAdopterDialogOpen] = useState(false);
   const [viewingAdopter, setViewingAdopter] = useState<UserType | null>(null);
   const [loadingAdopter, setLoadingAdopter] = useState(false);
+  const [isMedicalHistoryDialogOpen, setIsMedicalHistoryDialogOpen] = useState(false);
+  const [viewingMedicalHistoryDog, setViewingMedicalHistoryDog] = useState<Dog | null>(null);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+  const [loadingMedicalRecords, setLoadingMedicalRecords] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -230,6 +236,35 @@ export default function DogsManagement() {
       setIsAdopterDialogOpen(false);
     } finally {
       setLoadingAdopter(false);
+    }
+  };
+
+  const handleViewMedicalHistory = async (dog: Dog) => {
+    if (!token) return;
+    setViewingMedicalHistoryDog(dog);
+    setMedicalRecords([]);
+    setIsMedicalHistoryDialogOpen(true);
+    setLoadingMedicalRecords(true);
+
+    try {
+      const response = await fetch(`${API_URL}/medical-records/dog/${dog.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setMedicalRecords(data.items || []);
+      } else {
+        console.error('Failed to fetch medical records');
+        setMedicalRecords([]);
+      }
+    } catch (error) {
+      console.error('Error fetching medical records:', error);
+      setMedicalRecords([]);
+    } finally {
+      setLoadingMedicalRecords(false);
     }
   };
 
@@ -639,12 +674,19 @@ export default function DogsManagement() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewMedicalHistory(dog)}
+                        >
+                          <FileText className="w-4 h-4 mr-1" />
+                          Medical History
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleOpenAssignVet(dog)}
-                          className="flex-1"
                         >
                           <Stethoscope className="w-4 h-4 mr-1" />
                           Assign Vet
@@ -653,7 +695,6 @@ export default function DogsManagement() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleEdit(dog)}
-                          className="flex-1"
                         >
                           <Edit2 className="w-4 h-4 mr-1" />
                           Edit
@@ -767,12 +808,19 @@ export default function DogsManagement() {
                         </Button>
                       </div>
                     ) : (
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewMedicalHistory(dog)}
+                        >
+                          <FileText className="w-4 h-4 mr-1" />
+                          Medical History
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleOpenAssignVet(dog)}
-                          className="flex-1"
                         >
                           <Stethoscope className="w-4 h-4 mr-1" />
                           Assign Vet
@@ -781,7 +829,6 @@ export default function DogsManagement() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleEdit(dog)}
-                          className="flex-1"
                         >
                           <Edit2 className="w-4 h-4 mr-1" />
                           Edit
@@ -1233,6 +1280,67 @@ export default function DogsManagement() {
               onClick={() => {
                 setIsAdopterDialogOpen(false);
                 setViewingAdopter(null);
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Medical History Dialog */}
+      <Dialog open={isMedicalHistoryDialogOpen} onOpenChange={setIsMedicalHistoryDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Medical History - {viewingMedicalHistoryDog?.name}</DialogTitle>
+            <DialogDescription>
+              Veterinary records and medical history for this dog
+            </DialogDescription>
+          </DialogHeader>
+          {loadingMedicalRecords ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner size="lg" />
+            </div>
+          ) : medicalRecords.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">
+              <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p>No medical records found for this dog.</p>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              {medicalRecords.map((record) => (
+                <div key={record.id} className="flex gap-4 pb-4 border-b last:border-0 last:pb-0">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    record.type === 'vaccination' ? 'bg-status-progress/10 text-status-progress' :
+                    record.type === 'sterilization' ? 'bg-primary/10 text-primary' :
+                    'bg-secondary/10 text-secondary'
+                  }`}>
+                    {record.type === 'vaccination' && <Syringe className="w-5 h-5" />}
+                    {record.type === 'sterilization' && <Scissors className="w-5 h-5" />}
+                    {(record.type === 'treatment' || record.type === 'checkup') && <CheckCircle2 className="w-5 h-5" />}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-medium capitalize">{record.type}</h4>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(record.date).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{record.description}</p>
+                    <p className="text-xs text-muted-foreground mt-1">By {record.vetName}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsMedicalHistoryDialogOpen(false);
+                setViewingMedicalHistoryDog(null);
+                setMedicalRecords([]);
               }}
             >
               Close

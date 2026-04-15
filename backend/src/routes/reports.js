@@ -496,6 +496,7 @@ reportsRouter.post('/reports/:id/create-dog', requireAuth, async (req, res, next
     }
 
     const { id: reportId } = req.params;
+    const { vetId, status } = req.body;
 
     const [reportRows] = await pool.query(
       `SELECT r.*, u.name AS assigned_ngo_name, u.organization AS assigned_ngo_org ${REPORT_FROM} WHERE r.id = ? LIMIT 1`,
@@ -526,12 +527,12 @@ reportsRouter.post('/reports/:id/create-dog', requireAuth, async (req, res, next
     // Extract a name from description or use a default
     const defaultName = 'Rescued Dog';
 
-    // If the report is already completed, make the dog adoptable immediately.
-    // Otherwise default to 'reported' so NGO can manage lifecycle.
-    const dogStatus =
+    // Use provided status or default logic
+    const dogStatus = status || (
       report.status === 'completed' ? 'adoptable' :
       report.status === 'in_progress' ? 'in_progress' :
-      'reported';
+      'reported'
+    );
 
     const createdBy = req.user?.sub || req.user?.id || null;
     
@@ -540,8 +541,8 @@ reportsRouter.post('/reports/:id/create-dog', requireAuth, async (req, res, next
       `INSERT INTO dogs 
        (id, name, breed, estimated_age, gender, size, status, description, rescue_story,
         location_lat, location_lng, location_address, location_district,
-        vaccinated, sterilized, medical_notes, reported_at, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        vaccinated, sterilized, medical_notes, reported_at, created_by, vet_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         dogId,
         defaultName,
@@ -561,6 +562,7 @@ reportsRouter.post('/reports/:id/create-dog', requireAuth, async (req, res, next
         `Report urgency: ${report.urgency}`,
         report.reported_at,
         createdBy,
+        vetId || null,
       ]
     );
 

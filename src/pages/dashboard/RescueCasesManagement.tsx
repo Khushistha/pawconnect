@@ -67,6 +67,14 @@ export default function RescueCasesManagement() {
   const [deleting, setDeleting] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [creatingDog, setCreatingDog] = useState<string | null>(null);
+  const [isCreateDogDialogOpen, setIsCreateDogDialogOpen] = useState(false);
+  const [reportToCreateDog, setReportToCreateDog] = useState<RescueReport | null>(null);
+  const [createDogFormData, setCreateDogFormData] = useState({
+    vetId: 'none' as string,
+    status: 'adoptable' as DogStatus,
+  });
+  const [vets, setVets] = useState<any[]>([]);
+  const [loadingVets, setLoadingVets] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -135,10 +143,30 @@ export default function RescueCasesManagement() {
     }
   }, [token, toast]);
 
+  const fetchVets = useCallback(async () => {
+    if (!token) return;
+    setLoadingVets(true);
+    try {
+      const response = await fetch(`${API_URL}/vets`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch vets');
+      const data = await response.json();
+      setVets(data.items || []);
+    } catch (error: any) {
+      console.error('Failed to fetch vets:', error);
+    } finally {
+      setLoadingVets(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     fetchDogs();
     fetchReports();
-  }, [fetchDogs, fetchReports]);
+    fetchVets();
+  }, [fetchDogs, fetchReports, fetchVets]);
 
   const handleCreate = () => {
     setEditingDog(null);
@@ -268,6 +296,64 @@ export default function RescueCasesManagement() {
 
   const handleLocationSelect = (location: Location) => {
     setFormData({ ...formData, location });
+  };
+
+  const handleOpenCreateDogDialog = (report: RescueReport) => {
+    setReportToCreateDog(report);
+    setCreateDogFormData({
+      vetId: 'none',
+      status: 'adoptable',
+    });
+    setIsCreateDogDialogOpen(true);
+  };
+
+  const handleCreateDogFromReport = async () => {
+    if (!token || !reportToCreateDog) return;
+    setCreatingDog(reportToCreateDog.id);
+    try {
+      const response = await fetch(`${API_URL}/reports/${reportToCreateDog.id}/create-dog`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          vetId: createDogFormData.vetId === 'none' ? null : createDogFormData.vetId,
+          status: createDogFormData.status,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create dog from report');
+      }
+
+      const data = await response.json();
+      
+      // Update report to include dogId
+      setReports(prev => prev.map(r => 
+        r.id === reportToCreateDog.id ? { ...r, dogId: data.item.id } : r
+      ));
+
+      // Refresh dogs list
+      fetchDogs();
+
+      toast({
+        title: 'Success',
+        description: 'Dog created from report successfully. You can now find it in the Dogs section.',
+      });
+
+      setIsCreateDogDialogOpen(false);
+      setReportToCreateDog(null);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create dog from report',
+        variant: 'destructive',
+      });
+    } finally {
+      setCreatingDog(null);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -634,63 +720,12 @@ export default function RescueCasesManagement() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={async () => {
-                                if (!token) return;
-                                setCreatingDog(report.id);
-                                try {
-                                  const response = await fetch(`${API_URL}/reports/${report.id}/create-dog`, {
-                                    method: 'POST',
-                                    headers: {
-                                      'Authorization': `Bearer ${token}`,
-                                    },
-                                  });
-
-                                  if (!response.ok) {
-                                    const error = await response.json();
-                                    throw new Error(error.message || 'Failed to create dog from report');
-                                  }
-
-                                  const data = await response.json();
-                                  
-                                  // Update report to include dogId
-                                  setReports(prev => prev.map(r => 
-                                    r.id === report.id ? { ...r, dogId: data.item.id } : r
-                                  ));
-
-                                  // Refresh dogs list
-                                  fetchDogs();
-
-                                  toast({
-                                    title: 'Success',
-                                    description: 'Dog created from report successfully. You can now find it in the Dogs section.',
-                                  });
-                                } catch (error: any) {
-                                  toast({
-                                    title: 'Error',
-                                    description: error.message || 'Failed to create dog from report',
-                                    variant: 'destructive',
-                                  });
-                                } finally {
-                                  setCreatingDog(null);
-                                }
-                              }}
-                              disabled={
-                                creatingDog === report.id ||
-                                isVolunteerReportLockedForNgo(report, user?.id, user?.role)
-                              }
+                              onClick={() => handleOpenCreateDogDialog(report)}
+                              disabled={isVolunteerReportLockedForNgo(report, user?.id, user?.role)}
                               className="bg-primary text-primary-foreground hover:bg-primary/90"
                             >
-                              {creatingDog === report.id ? (
-                                <>
-                                  <ButtonSpinner />
-                                  Creating...
-                                </>
-                              ) : (
-                                <>
-                                  <PawPrint className="w-4 h-4 mr-1" />
-                                  Create Dog
-                                </>
-                              )}
+                              <PawPrint className="w-4 h-4 mr-1" />
+                              Create Dog
                             </Button>
                           )}
                           {report.dogId && (
@@ -1043,6 +1078,99 @@ export default function RescueCasesManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create Dog from Report Dialog */}
+      <Dialog open={isCreateDogDialogOpen} onOpenChange={setIsCreateDogDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Dog from Report</DialogTitle>
+            <DialogDescription>
+              Create a dog entry from this rescue report. You can assign a veterinarian and set the initial status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {reportToCreateDog && (
+              <div className="rounded-lg border bg-muted/50 p-3 text-sm">
+                <p className="font-medium mb-1">Report Details:</p>
+                <p className="text-muted-foreground">{reportToCreateDog.description}</p>
+                <p className="text-muted-foreground mt-1">
+                  Reported by: {reportToCreateDog.reportedBy} • {new Date(reportToCreateDog.reportedAt).toLocaleDateString()}
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="vetSelect">Assign Veterinarian (Optional)</Label>
+              {loadingVets ? (
+                <div className="flex items-center justify-center py-2">
+                  <Spinner size="sm" />
+                </div>
+              ) : (
+                <Select
+                  value={createDogFormData.vetId}
+                  onValueChange={(value) => setCreateDogFormData({ ...createDogFormData, vetId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select veterinarian" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No veterinarian assigned</SelectItem>
+                    {vets.map((vet) => (
+                      <SelectItem key={vet.id} value={vet.id}>
+                        {vet.name} ({vet.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="statusSelect">Initial Status</Label>
+              <Select
+                value={createDogFormData.status}
+                onValueChange={(value) => setCreateDogFormData({ ...createDogFormData, status: value as DogStatus })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="reported">Reported</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="treated">Treated</SelectItem>
+                  <SelectItem value="adoptable">Adoptable</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCreateDogDialogOpen(false)}
+              disabled={creatingDog !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateDogFromReport}
+              disabled={creatingDog !== null}
+            >
+              {creatingDog ? (
+                <>
+                  <ButtonSpinner />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <PawPrint className="w-4 h-4 mr-1" />
+                  Create Dog
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

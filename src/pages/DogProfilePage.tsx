@@ -29,7 +29,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import type { Dog } from '@/types';
+import type { Dog, MedicalRecord } from '@/types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -44,6 +44,8 @@ export default function DogProfilePage() {
   const [dog, setDog] = useState<Dog | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+  const [medicalRecordsLoading, setMedicalRecordsLoading] = useState(false);
 
   const [applyOpen, setApplyOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -71,6 +73,11 @@ export default function DogProfilePage() {
         }
         const data = await response.json();
         setDog(data.item || null);
+        
+        // Fetch medical records for this dog
+        if (data.item) {
+          await fetchMedicalRecords(data.item.id);
+        }
       } catch (e: any) {
         setDog(null);
         setError(e.message || 'Failed to load dog');
@@ -79,11 +86,37 @@ export default function DogProfilePage() {
       }
     };
     fetchDog();
-  }, [id]);
+  }, [id, token]);
 
   // Medical records are still mock-only in this app.
   // When a backend endpoint exists, we can replace this.
-  const medicalRecords: any[] = [];
+  // const medicalRecords: any[] = [];
+
+  const fetchMedicalRecords = async (dogId: string) => {
+    if (!token) return;
+    
+    try {
+      setMedicalRecordsLoading(true);
+      const response = await fetch(`${API_URL}/medical-records/dog/${dogId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setMedicalRecords(data.items || []);
+      } else {
+        console.error('Failed to fetch medical records');
+        setMedicalRecords([]);
+      }
+    } catch (error) {
+      console.error('Error fetching medical records:', error);
+      setMedicalRecords([]);
+    } finally {
+      setMedicalRecordsLoading(false);
+    }
+  };
 
   const openApply = () => {
     if (!isAuthenticated) {
@@ -443,7 +476,7 @@ export default function DogProfilePage() {
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
+              <Label htmlFor="phone">Phone *</Label>
               <Input
                 id="phone"
                 value={form.applicantPhone}
@@ -457,7 +490,7 @@ export default function DogProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="homeType">Home Type</Label>
+              <Label htmlFor="homeType">Home Type *</Label>
               <Input
                 id="homeType"
                 value={form.homeType}
@@ -490,7 +523,7 @@ export default function DogProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="experience">Experience with pets</Label>
+              <Label htmlFor="experience">Experience with pets *</Label>
               <Textarea
                 id="experience"
                 value={form.experience}
@@ -504,7 +537,7 @@ export default function DogProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="reason">Why do you want to adopt?</Label>
+              <Label htmlFor="reason">Why do you want to adopt? *</Label>
               <Textarea
                 id="reason"
                 value={form.reason}

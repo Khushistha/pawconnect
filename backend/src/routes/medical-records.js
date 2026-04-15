@@ -63,6 +63,59 @@ medicalRecordsRouter.get('/medical-records', requireAuth, async (req, res, next)
   }
 });
 
+// GET /api/medical-records/dog/:dogId - Get medical records for a specific dog (for NGOs and vets)
+medicalRecordsRouter.get('/medical-records/dog/:dogId', requireAuth, async (req, res, next) => {
+  try {
+    const userRole = req.user?.role;
+    const userId = req.user?.sub || req.user?.id;
+    if (!userId) throw new HttpError(401, 'Unauthorized');
+
+    const { dogId } = req.params;
+
+    // Allow vets, NGOs, and superadmins to view medical records
+    if (!['veterinarian', 'ngo_admin', 'superadmin'].includes(userRole)) {
+      throw new HttpError(403, 'Access denied');
+    }
+
+    // If user is a vet, they can only see records for dogs assigned to them
+    // NGOs and superadmins can see all records
+    let query = `
+      SELECT mr.*, d.name as dog_name, u.name as vet_name
+      FROM medical_records mr
+      JOIN dogs d ON d.id = mr.dog_id
+      JOIN users u ON u.id = mr.vet_id
+      WHERE mr.dog_id = ?
+    `;
+    const params = [dogId];
+
+    if (userRole === 'veterinarian') {
+      query += ` AND (mr.vet_id = ? OR d.vet_id = ?)`;
+      params.push(userId, userId);
+    }
+
+    query += ` ORDER BY mr.created_at DESC`;
+
+    const [rows] = await pool.query(query, params);
+
+    res.json({
+      items: rows.map((row) => ({
+        id: row.id,
+        dogId: row.dog_id,
+        dogName: row.dog_name,
+        vetId: row.vet_id,
+        vetName: row.vet_name,
+        type: row.record_type,
+        description: row.description,
+        medications: row.medications ? row.medications.split(',').map(m => m.trim()).filter(m => m) : [],
+        nextFollowUp: row.next_follow_up ? new Date(row.next_follow_up).toISOString() : undefined,
+        date: new Date(row.created_at).toISOString(),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/medical-records - Create a new medical record
 medicalRecordsRouter.post('/medical-records', requireAuth, async (req, res, next) => {
   try {
