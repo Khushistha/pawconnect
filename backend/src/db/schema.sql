@@ -111,6 +111,24 @@ CREATE TABLE IF NOT EXISTS password_reset_otps (
   INDEX idx_otp_used (used)
 );
 
+-- Registration OTPs for pending volunteer/adopter signups
+CREATE TABLE IF NOT EXISTS signup_verification_otps (
+  id CHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('volunteer','adopter') NOT NULL,
+  phone VARCHAR(40) NOT NULL,
+  organization VARCHAR(255) NULL,
+  otp VARCHAR(6) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_signup_otp_email (email),
+  INDEX idx_signup_otp_expires (expires_at),
+  INDEX idx_signup_otp_used (used)
+);
+
 -- Adoption applications (submitted by logged-in users; reviewed by NGO admins)
 CREATE TABLE IF NOT EXISTS adoption_applications (
   id CHAR(36) PRIMARY KEY,

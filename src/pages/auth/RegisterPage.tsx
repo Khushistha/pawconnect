@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Heart, Mail, Lock, Eye, EyeOff, User, Phone, Building2, Upload, X, FileText, Home } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -16,11 +15,11 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { ButtonSpinner } from '@/components/ui/spinner';
 import type { UserRole } from '@/types';
 import { cn } from '@/lib/utils';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -28,7 +27,7 @@ const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email'),
   phone: z.string().regex(/^\d{10}$/, 'Phone number must be exactly 10 digits'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string(),
   organization: z.string().optional(),
   verificationDocument: z.string().optional(),
@@ -72,7 +71,11 @@ export default function RegisterPage() {
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [documentPreview, setDocumentPreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { register: registerUser, isLoading } = useAuth();
+  const [registrationEmail, setRegistrationEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpStepActive, setOtpStepActive] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isResendingOtp, setIsResendingOtp] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -81,6 +84,14 @@ export default function RegisterPage() {
   });
 
   const requiresVerification = selectedRole === 'veterinarian' || selectedRole === 'ngo_admin';
+  const requiresRegistrationOtp = selectedRole === 'adopter' || selectedRole === 'volunteer';
+  const maskedEmail = useMemo(() => {
+    if (!registrationEmail) return '';
+    const [local, domain] = registrationEmail.split('@');
+    if (!domain) return registrationEmail;
+    if (local.length <= 2) return `${local[0] ?? ''}***@${domain}`;
+    return `${local.slice(0, 2)}***@${domain}`;
+  }, [registrationEmail]);
 
   const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -174,7 +185,17 @@ export default function RegisterPage() {
         throw new Error(result.message || 'Registration failed');
       }
 
-      // Show success toast and redirect to login
+      if (result.requiresOtp) {
+        setRegistrationEmail(result.email || data.email);
+        setOtpStepActive(true);
+        setOtpCode('');
+        toast({
+          title: 'OTP sent',
+          description: result.message || 'Enter the OTP sent to your email to complete registration.',
+        });
+        return;
+      }
+
       if (result.requiresVerification) {
         toast({
           title: 'Registration successful',
@@ -187,7 +208,6 @@ export default function RegisterPage() {
         });
       }
       
-      // Always redirect to login page after successful registration
       navigate('/login', { replace: true });
     } catch (error: any) {
       toast({
@@ -198,6 +218,84 @@ export default function RegisterPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const verifyOtp = async () => {
+    if (otpCode.length !== 6) {
+      toast({
+        title: 'Enter valid OTP',
+        description: 'Please enter the 6-digit OTP sent to your email.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/verify-registration-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: registrationEmail,
+          otp: otpCode,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to verify OTP');
+      }
+
+      toast({
+        title: 'Registration successful',
+        description: result.message || 'Your account has been created successfully. Please login to continue.',
+      });
+      navigate('/login', { replace: true });
+    } catch (error: any) {
+      toast({
+        title: 'OTP verification failed',
+        description: error.message || 'Failed to verify OTP',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    setIsResendingOtp(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/resend-registration-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: registrationEmail }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to resend OTP');
+      }
+
+      toast({
+        title: 'OTP resent',
+        description: result.message || 'A new OTP has been sent to your email.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Resend failed',
+        description: error.message || 'Failed to resend OTP',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResendingOtp(false);
+    }
+  };
+
+  const goBackToRegistration = () => {
+    setOtpStepActive(false);
+    setOtpCode('');
   };
 
   return (
@@ -266,36 +364,38 @@ export default function RegisterPage() {
             <p className="text-muted-foreground">Join our community and start making a difference</p>
           </div>
 
-          {/* Role Selection */}
-          <div className="space-y-3">
-            <Label>I want to join as</Label>
-            <div className="grid grid-cols-2 gap-3">
-              {roles.map((role) => (
-                <button
-                  key={role.value}
-                  type="button"
-                  onClick={() => setSelectedRole(role.value)}
-                  className={cn(
-                    'p-4 rounded-xl border-2 text-left transition-all',
-                    selectedRole === role.value
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
-                  )}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={selectedRole === role.value ? 'text-primary' : 'text-muted-foreground'}>
-                      {role.icon}
-                    </span>
-                    <span className="font-medium">{role.label}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{role.description}</p>
-                </button>
-              ))}
-            </div>
-          </div>
+          {!otpStepActive && (
+            <>
+              {/* Role Selection */}
+              <div className="space-y-3">
+                <Label>I want to join as</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {roles.map((role) => (
+                    <button
+                      key={role.value}
+                      type="button"
+                      onClick={() => setSelectedRole(role.value)}
+                      className={cn(
+                        'p-4 rounded-xl border-2 text-left transition-all',
+                        selectedRole === role.value
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/50'
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={selectedRole === role.value ? 'text-primary' : 'text-muted-foreground'}>
+                          {role.icon}
+                        </span>
+                        <span className="font-medium">{role.label}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{role.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {/* Form */}
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name *</Label>
@@ -466,11 +566,55 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full btn-hero-primary" disabled={isLoading || isSubmitting}>
-              {(isLoading || isSubmitting) && <ButtonSpinner />}
-              {isLoading || isSubmitting ? 'Creating account...' : 'Create Account'}
-            </Button>
-          </form>
+                <Button type="submit" className="w-full btn-hero-primary" disabled={isSubmitting}>
+                  {isSubmitting && <ButtonSpinner />}
+                  {isSubmitting
+                    ? requiresRegistrationOtp
+                      ? 'Sending OTP...'
+                      : 'Creating account...'
+                    : 'Create Account'}
+                </Button>
+              </form>
+            </>
+          )}
+
+          {otpStepActive && (
+            <div className="space-y-5 rounded-xl border bg-card p-6">
+              <div className="space-y-2 text-center">
+                <h2 className="text-xl font-semibold">Verify your email</h2>
+                <p className="text-sm text-muted-foreground">
+                  Enter the 6-digit OTP sent to <span className="font-medium text-foreground">{maskedEmail}</span>.
+                </p>
+              </div>
+
+              <div className="flex justify-center">
+                <InputOTP maxLength={6} value={otpCode} onChange={setOtpCode}>
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <Button className="w-full btn-hero-primary" onClick={verifyOtp} disabled={isVerifyingOtp}>
+                  {isVerifyingOtp && <ButtonSpinner />}
+                  {isVerifyingOtp ? 'Verifying OTP...' : 'Verify OTP'}
+                </Button>
+                <Button type="button" variant="outline" className="w-full" onClick={resendOtp} disabled={isResendingOtp}>
+                  {isResendingOtp && <ButtonSpinner />}
+                  {isResendingOtp ? 'Resending...' : 'Resend OTP'}
+                </Button>
+                <Button type="button" variant="ghost" className="w-full" onClick={goBackToRegistration}>
+                  Change email / go back
+                </Button>
+              </div>
+            </div>
+          )}
 
           <p className="text-center text-sm text-muted-foreground">
             Already have an account?{' '}

@@ -7,7 +7,11 @@ import { pool } from '../db/pool.js';
 import { env } from '../config/env.js';
 import { HttpError } from '../utils/httpError.js';
 import { uploadBase64Image } from '../utils/cloudinary.js';
-import { sendVerificationPendingEmail, sendPasswordResetOTPEmail } from '../utils/email.js';
+import {
+  sendVerificationPendingEmail,
+  sendPasswordResetOTPEmail,
+  sendRegistrationOTPEmail,
+} from '../utils/email.js';
 
 export const authRouter = Router();
 
@@ -26,6 +30,15 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const verifyRegistrationOtpSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().length(6, 'OTP must be 6 digits'),
+});
+
+const resendRegistrationOtpSchema = z.object({
+  email: z.string().email(),
+});
+
 function signToken(user) {
   return jwt.sign(
     { sub: user.id, role: user.role, email: user.email, name: user.name },
@@ -34,15 +47,80 @@ function signToken(user) {
   );
 }
 
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+async function ensureEmailAvailableForSignup(email) {
+  const [userRows] = await pool.query(
+    `SELECT id FROM users WHERE email = ? LIMIT 1`,
+    [email]
+  );
+  if (userRows?.length) {
+    throw new HttpError(409, 'Email already registered');
+  }
+}
+
+async function invalidatePendingSignupOtps(email) {
+  await pool.query(
+    `UPDATE signup_verification_otps SET used = 1 WHERE email = ? AND used = 0`,
+    [email]
+  );
+}
+
 authRouter.post('/auth/register', async (req, res, next) => {
   try {
     const data = registerSchema.parse(req.body);
     const role = data.role ?? 'public';
-    const id = uuidv4();
-    const passwordHash = await bcrypt.hash(data.password, 10);
+    const normalizedEmail = data.email.toLowerCase();
 
     // Roles that require verification
     const requiresVerification = role === 'veterinarian' || role === 'ngo_admin';
+    const requiresRegistrationOtp = role === 'adopter' || role === 'volunteer';
+
+    await ensureEmailAvailableForSignup(normalizedEmail);
+
+    if (requiresRegistrationOtp) {
+      const passwordHash = await bcrypt.hash(data.password, 10);
+      const otp = generateOtp();
+      const otpId = uuidv4();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await invalidatePendingSignupOtps(normalizedEmail);
+
+      await pool.query(
+        `INSERT INTO signup_verification_otps
+          (id, email, name, password_hash, role, phone, organization, otp, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          otpId,
+          normalizedEmail,
+          data.name,
+          passwordHash,
+          role,
+          data.phone ?? '',
+          data.organization ?? null,
+          otp,
+          expiresAt,
+        ]
+      );
+
+      try {
+        await sendRegistrationOTPEmail(normalizedEmail, data.name, otp);
+      } catch (emailError) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to send registration OTP email:', emailError);
+      }
+
+      return res.status(200).json({
+        requiresOtp: true,
+        email: normalizedEmail,
+        message: 'We sent a 6-digit OTP to your email. Enter it to complete registration.',
+      });
+    }
+
+    const id = uuidv4();
+    const passwordHash = await bcrypt.hash(data.password, 10);
     
     let verificationStatus = null;
     let verificationDocumentUrl = null;
@@ -74,7 +152,7 @@ authRouter.post('/auth/register', async (req, res, next) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
-          data.email.toLowerCase(),
+          normalizedEmail,
           passwordHash,
           data.name,
           role,
@@ -92,7 +170,7 @@ authRouter.post('/auth/register', async (req, res, next) => {
 
     const user = {
       id,
-      email: data.email.toLowerCase(),
+      email: normalizedEmail,
       name: data.name,
       role,
       phone: data.phone ?? undefined,
@@ -108,7 +186,7 @@ authRouter.post('/auth/register', async (req, res, next) => {
       // User needs verification - don't return token
       // Send verification pending email
       try {
-        await sendVerificationPendingEmail(data.email.toLowerCase(), data.name, role);
+        await sendVerificationPendingEmail(normalizedEmail, data.name, role);
       } catch (emailError) {
         // Log error but don't fail registration
         // eslint-disable-next-line no-console
@@ -121,6 +199,111 @@ authRouter.post('/auth/register', async (req, res, next) => {
         requiresVerification: true,
       });
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post('/auth/verify-registration-otp', async (req, res, next) => {
+  try {
+    const data = verifyRegistrationOtpSchema.parse(req.body);
+    const email = data.email.toLowerCase();
+
+    const [otpRows] = await pool.query(
+      `SELECT id, email, name, password_hash, role, phone, organization, otp, expires_at
+       FROM signup_verification_otps
+       WHERE email = ? AND used = 0 AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [email]
+    );
+
+    const otpRecord = otpRows?.[0];
+    if (!otpRecord) {
+      throw new HttpError(400, 'Invalid or expired OTP. Please request a new one.');
+    }
+    if (otpRecord.otp !== data.otp) {
+      throw new HttpError(400, 'Invalid OTP code.');
+    }
+
+    await ensureEmailAvailableForSignup(email);
+
+    const id = uuidv4();
+    await pool.query(
+      `INSERT INTO users (
+        id, email, password_hash, name, role, phone, organization,
+        verification_status, verification_document_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        email,
+        otpRecord.password_hash,
+        otpRecord.name,
+        otpRecord.role,
+        otpRecord.phone || null,
+        otpRecord.organization || null,
+        null,
+        null,
+      ]
+    );
+
+    await pool.query(
+      `UPDATE signup_verification_otps SET used = 1 WHERE email = ? AND used = 0`,
+      [email]
+    );
+
+    res.status(201).json({
+      message: 'Registration completed successfully. Please login to continue.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post('/auth/resend-registration-otp', async (req, res, next) => {
+  try {
+    const data = resendRegistrationOtpSchema.parse(req.body);
+    const email = data.email.toLowerCase();
+
+    const [pendingRows] = await pool.query(
+      `SELECT id, name, role
+       FROM signup_verification_otps
+       WHERE email = ? AND used = 0
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [email]
+    );
+
+    const pending = pendingRows?.[0];
+    if (!pending) {
+      throw new HttpError(404, 'No pending registration found for this email.');
+    }
+
+    const otp = generateOtp();
+    const otpId = uuidv4();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await invalidatePendingSignupOtps(email);
+
+    await pool.query(
+      `INSERT INTO signup_verification_otps
+        (id, email, name, password_hash, role, phone, organization, otp, expires_at)
+       SELECT ?, email, name, password_hash, role, phone, organization, ?, ?
+       FROM signup_verification_otps
+       WHERE id = ? LIMIT 1`,
+      [otpId, otp, expiresAt, pending.id]
+    );
+
+    try {
+      await sendRegistrationOTPEmail(email, pending.name, otp);
+    } catch (emailError) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to resend registration OTP email:', emailError);
+    }
+
+    res.json({
+      message: 'OTP sent again',
+    });
   } catch (err) {
     next(err);
   }

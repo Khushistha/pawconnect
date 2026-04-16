@@ -54,6 +54,12 @@ export default function ReportDogPage() {
     }
   }, [user, setValue]);
 
+  useEffect(() => {
+    if (submitted) {
+      window.scrollTo(0, 0);
+    }
+  }, [submitted]);
+
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;

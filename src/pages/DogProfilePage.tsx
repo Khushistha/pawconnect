@@ -18,6 +18,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -93,14 +94,14 @@ export default function DogProfilePage() {
   // const medicalRecords: any[] = [];
 
   const fetchMedicalRecords = async (dogId: string) => {
-    if (!token) return;
-    
     try {
       setMedicalRecordsLoading(true);
       const response = await fetch(`${API_URL}/medical-records/dog/${dogId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : undefined,
       });
       
       if (response.ok) {
@@ -336,38 +337,68 @@ export default function DogProfilePage() {
             )}
 
             {/* Medical History */}
-            {medicalRecords.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Medical History</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {medicalRecords.map((record) => (
-                    <div key={record.id} className="flex gap-4 pb-4 border-b last:border-0 last:pb-0">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        record.type === 'vaccination' ? 'bg-status-progress/10 text-status-progress' :
-                        record.type === 'sterilization' ? 'bg-primary/10 text-primary' :
-                        'bg-secondary/10 text-secondary'
-                      }`}>
-                        {record.type === 'vaccination' && <Syringe className="w-5 h-5" />}
-                        {record.type === 'sterilization' && <Scissors className="w-5 h-5" />}
-                        {(record.type === 'treatment' || record.type === 'checkup') && <CheckCircle2 className="w-5 h-5" />}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <h4 className="font-medium capitalize">{record.type}</h4>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(record.date).toLocaleDateString()}
-                          </span>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Medical History</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {medicalRecordsLoading ? (
+                  <div className="py-8 flex items-center justify-center">
+                    <Spinner size="lg" />
+                  </div>
+                ) : medicalRecords.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No medical records have been added for this dog yet.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {medicalRecords.map((record, index) => (
+                      <div key={record.id}>
+                        <div className="flex gap-4">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                            record.type === 'vaccination' ? 'bg-status-progress/10 text-status-progress' :
+                            record.type === 'sterilization' ? 'bg-primary/10 text-primary' :
+                            'bg-secondary/10 text-secondary'
+                          }`}>
+                            {record.type === 'vaccination' && <Syringe className="w-5 h-5" />}
+                            {record.type === 'sterilization' && <Scissors className="w-5 h-5" />}
+                            {(record.type === 'treatment' || record.type === 'checkup') && <CheckCircle2 className="w-5 h-5" />}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1 gap-3">
+                              <h4 className="font-medium capitalize">{record.type}</h4>
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                {new Date(record.date).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{record.description}</p>
+                            <p className="text-xs text-muted-foreground mt-1">By {record.vetName}</p>
+                            {record.medications && record.medications.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {record.medications.map((medication) => (
+                                  <span
+                                    key={`${record.id}-${medication}`}
+                                    className="rounded-full bg-primary/10 px-2 py-1 text-xs text-primary"
+                                  >
+                                    {medication}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {record.nextFollowUp && (
+                              <p className="text-xs text-muted-foreground mt-2">
+                                Next follow-up: {new Date(record.nextFollowUp).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">{record.description}</p>
-                        <p className="text-xs text-muted-foreground mt-1">By {record.vetName}</p>
+                        {index < medicalRecords.length - 1 && <Separator className="mt-4" />}
                       </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Right Column - Info */}

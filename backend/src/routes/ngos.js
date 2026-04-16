@@ -35,55 +35,58 @@ ngosRouter.get('/ngos', async (_req, res, next) => {
         u.verified_at,
         u.verified_by,
         u.created_at,
-        COUNT(DISTINCT d.id) as total_dogs,
-        COUNT(DISTINCT r.id) as total_reports,
-        COUNT(DISTINCT CASE WHEN r.status = 'completed' THEN r.id END) as completed_rescues
+        -- Dogs handled by this NGO (stored in dogs.created_by)
+        (SELECT COUNT(*) FROM dogs d WHERE d.created_by = u.id) AS total_dogs,
+        -- Reports handled by this NGO (preferred: assigned_ngo_id; fallback: dog belongs to NGO)
+        (SELECT COUNT(*)
+          FROM rescue_reports r
+          WHERE r.assigned_ngo_id = u.id
+             OR (
+               r.assigned_ngo_id IS NULL
+               AND r.dog_id IS NOT NULL
+               AND r.dog_id IN (
+                 SELECT dd.id FROM dogs dd WHERE dd.created_by = u.id
+               )
+             )
+        ) AS total_reports,
+        -- Completed rescues handled by this NGO
+        (SELECT COUNT(*)
+          FROM rescue_reports r
+          WHERE r.status = 'completed'
+            AND (
+              r.assigned_ngo_id = u.id
+              OR (
+                r.assigned_ngo_id IS NULL
+                AND r.dog_id IS NOT NULL
+                AND r.dog_id IN (
+                  SELECT dd.id FROM dogs dd WHERE dd.created_by = u.id
+                )
+              )
+            )
+        ) AS completed_rescues
        FROM users u
-       LEFT JOIN dogs d ON d.id IN (
-         SELECT id FROM dogs WHERE reported_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)
-       )
-       LEFT JOIN rescue_reports r ON r.dog_id = d.id OR r.reported_by = u.email
        WHERE u.role = 'ngo_admin' 
          AND u.verification_status = 'approved'
-       GROUP BY u.id, u.email, u.name, u.role, u.phone, u.organization, u.avatar,
-                u.verification_status, u.verified_at, u.verified_by, u.created_at
        ORDER BY u.created_at DESC`
     );
 
-    const ngos = await Promise.all(rows.map(async (row) => {
-      // Get detailed rescue operations
-      const [dogRows] = await pool.query(
-        `SELECT COUNT(*) as count FROM dogs WHERE id IN (
-          SELECT DISTINCT dog_id FROM rescue_reports WHERE dog_id IS NOT NULL
-        ) AND reported_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)`
-      );
-
-      const [reportRows] = await pool.query(
-        `SELECT COUNT(*) as count FROM rescue_reports 
-         WHERE reported_by = ? OR dog_id IN (
-           SELECT id FROM dogs WHERE reported_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)
-         )`,
-        [row.email]
-      );
-
-      return {
-        id: row.id,
-        email: row.email,
-        name: row.name,
-        role: row.role,
-        phone: row.phone ?? undefined,
-        organization: row.organization ?? undefined,
-        avatar: row.avatar ?? undefined,
-        verificationStatus: row.verification_status,
-        verifiedAt: row.verified_at ? new Date(row.verified_at).toISOString() : undefined,
-        verifiedBy: row.verified_by ?? undefined,
-        createdAt: new Date(row.created_at).toISOString(),
-        stats: {
-          totalDogs: Number(row.total_dogs) || 0,
-          totalReports: Number(row.total_reports) || 0,
-          completedRescues: Number(row.completed_rescues) || 0,
-        },
-      };
+    const ngos = rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      role: row.role,
+      phone: row.phone ?? undefined,
+      organization: row.organization ?? undefined,
+      avatar: row.avatar ?? undefined,
+      verificationStatus: row.verification_status,
+      verifiedAt: row.verified_at ? new Date(row.verified_at).toISOString() : undefined,
+      verifiedBy: row.verified_by ?? undefined,
+      createdAt: new Date(row.created_at).toISOString(),
+      stats: {
+        totalDogs: Number(row.total_dogs) || 0,
+        totalReports: Number(row.total_reports) || 0,
+        completedRescues: Number(row.completed_rescues) || 0,
+      },
     }));
 
     res.json({ ngos });
@@ -118,9 +121,10 @@ ngosRouter.get('/ngos/:id', async (req, res, next) => {
       `SELECT d.id, d.name, d.status, d.reported_at, d.rescued_at, d.adopted_at,
               d.location_address, d.location_district
        FROM dogs d
-       WHERE d.reported_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)
+       WHERE d.created_by = ?
        ORDER BY d.reported_at DESC
-       LIMIT 100`
+       LIMIT 100`,
+      [ngo.id]
     );
 
     const [reportRows] = await pool.query(
@@ -128,10 +132,17 @@ ngosRouter.get('/ngos/:id', async (req, res, next) => {
               r.reported_at, r.location_address, r.location_district,
               r.dog_id
        FROM rescue_reports r
-       WHERE r.reported_by = ?
+       WHERE r.assigned_ngo_id = ?
+          OR (
+            r.assigned_ngo_id IS NULL
+            AND r.dog_id IS NOT NULL
+            AND r.dog_id IN (
+              SELECT d2.id FROM dogs d2 WHERE d2.created_by = ?
+            )
+          )
        ORDER BY r.reported_at DESC
        LIMIT 100`,
-      [ngo.email]
+      [ngo.id, ngo.id]
     );
 
     const rescueOperations = {

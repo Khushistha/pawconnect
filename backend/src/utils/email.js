@@ -257,3 +257,60 @@ export async function sendPasswordResetOTPEmail(email, name, otp) {
 
   await sendEmail(email, 'Password Reset OTP - PawConnect Nepal', html);
 }
+
+/**
+ * Send registration verification OTP
+ * @param {string} email - User email
+ * @param {string} name - User name
+ * @param {string} otp - 6-digit OTP code
+ */
+export async function sendRegistrationOTPEmail(email, name, otp) {
+  const loginUrl = `${env.FRONTEND_ORIGIN}/login`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .otp-box { background: white; border: 2px dashed #10b981; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }
+        .otp-code { font-size: 32px; font-weight: bold; color: #10b981; letter-spacing: 8px; font-family: monospace; }
+        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px; }
+        .footer { text-align: center; margin-top: 30px; color: #6b7280; font-size: 12px; }
+        .button { display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 6px; margin-top: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🐾 PawConnect Nepal</h1>
+        </div>
+        <div class="content">
+          <h2>Verify Your Email</h2>
+          <p>Hello ${name},</p>
+          <p>Thank you for registering with PawConnect Nepal. Please use the OTP below to complete your registration.</p>
+          <div class="otp-box">
+            <div class="otp-code">${otp}</div>
+          </div>
+          <div class="warning">
+            <strong>⚠️ Important:</strong> This OTP will expire in 10 minutes. Do not share this code with anyone.
+          </div>
+          <p>Once your email is verified, your account will be created successfully and you can log in.</p>
+          <a href="${loginUrl}" class="button">Go to Login</a>
+          <p>Best regards,<br>The PawConnect Nepal Team</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 PawConnect Nepal. All rights reserved.</p>
+          <p>Nayabazar, Pokhara, Nepal</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  await sendEmail(email, 'Registration OTP - PawConnect Nepal', html);
+}

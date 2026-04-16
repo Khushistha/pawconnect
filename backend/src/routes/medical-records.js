@@ -63,22 +63,17 @@ medicalRecordsRouter.get('/medical-records', requireAuth, async (req, res, next)
   }
 });
 
-// GET /api/medical-records/dog/:dogId - Get medical records for a specific dog (for NGOs and vets)
-medicalRecordsRouter.get('/medical-records/dog/:dogId', requireAuth, async (req, res, next) => {
+// GET /api/medical-records/dog/:dogId - Get medical records for a specific dog
+// Public for dog profile pages; vets/NGOs still use the same endpoint.
+medicalRecordsRouter.get('/medical-records/dog/:dogId', async (req, res, next) => {
   try {
     const userRole = req.user?.role;
     const userId = req.user?.sub || req.user?.id;
-    if (!userId) throw new HttpError(401, 'Unauthorized');
 
     const { dogId } = req.params;
 
-    // Allow vets, NGOs, and superadmins to view medical records
-    if (!['veterinarian', 'ngo_admin', 'superadmin'].includes(userRole)) {
-      throw new HttpError(403, 'Access denied');
-    }
-
-    // If user is a vet, they can only see records for dogs assigned to them
-    // NGOs and superadmins can see all records
+    // Public users can read dog history.
+    // If a veterinarian is logged in, limit them to their assigned dogs.
     let query = `
       SELECT mr.*, d.name as dog_name, u.name as vet_name
       FROM medical_records mr
@@ -89,6 +84,7 @@ medicalRecordsRouter.get('/medical-records/dog/:dogId', requireAuth, async (req,
     const params = [dogId];
 
     if (userRole === 'veterinarian') {
+      if (!userId) throw new HttpError(401, 'Unauthorized');
       query += ` AND (mr.vet_id = ? OR d.vet_id = ?)`;
       params.push(userId, userId);
     }

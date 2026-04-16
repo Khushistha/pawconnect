@@ -463,7 +463,14 @@ export default function VetDashboard() {
                       </DialogContent>
                     </Dialog>
 
-                    <Dialog>
+                    <Dialog
+                      open={selectedDog === dog.id}
+                      onOpenChange={(open) => {
+                        if (!open && selectedDog === dog.id) {
+                          setSelectedDog(null);
+                        }
+                      }}
+                    >
                       <DialogTrigger asChild>
                         <Button 
                           size="sm" 
